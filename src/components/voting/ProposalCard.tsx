@@ -211,30 +211,29 @@ export function ProposalCard({ proposal, userIsAdmin, onVoteSuccess }: ProposalC
                       key={index} 
                       onClick={() => handleOptionClick(index)}
                       className={`
-                        relative p-4 rounded-lg border-2 cursor-pointer transition-all duration-200
+                        relative p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 flex items-center justify-between
                         ${selectedOption === index 
                           ? 'border-primary bg-primary/5 shadow-sm' 
                           : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800/50'
                         }
                       `}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-foreground pr-8">
-                          {option}
-                        </span>
-                        
-                        {/* Check Icon in Top Right Corner */}
-                        <div className={`
-                          absolute top-3 right-3 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-200
-                          ${selectedOption === index 
-                            ? 'border-primary bg-primary text-primary-foreground' 
-                            : 'border-gray-300 dark:border-gray-600'
-                          }
-                        `}>
-                          {selectedOption === index && (
-                            <Check className="h-3 w-3" />
-                          )}
-                        </div>
+                      {/* Text aligned to left */}
+                      <span className="font-medium text-foreground flex-1">
+                        {option}
+                      </span>
+                      
+                      {/* Check Icon aligned to right, same height as text */}
+                      <div className={`
+                        w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-200 flex-shrink-0 ml-3
+                        ${selectedOption === index 
+                          ? 'border-primary bg-primary text-primary-foreground' 
+                          : 'border-gray-300 dark:border-gray-600'
+                        }
+                      `}>
+                        {selectedOption === index && (
+                          <Check className="h-3 w-3" />
+                        )}
                       </div>
                     </div>
                   ))}
