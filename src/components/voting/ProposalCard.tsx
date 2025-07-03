@@ -4,8 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
 import { 
   Clock, 
   Users, 
@@ -15,8 +13,7 @@ import {
   Eye,
   AlertCircle,
   Lock,
-  Circle,
-  Dot
+  Check
 } from 'lucide-react';
 import { Proposal } from '@/types/voting';
 import { votingContract } from '@/lib/contract';
@@ -29,7 +26,7 @@ interface ProposalCardProps {
 }
 
 export function ProposalCard({ proposal, userIsAdmin, onVoteSuccess }: ProposalCardProps) {
-  const [selectedOption, setSelectedOption] = useState<string>('');
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [isVoting, setIsVoting] = useState(false);
   const [isRevealing, setIsRevealing] = useState(false);
 
@@ -38,13 +35,18 @@ export function ProposalCard({ proposal, userIsAdmin, onVoteSuccess }: ProposalC
   const hasEnded = now > proposal.endTime;
   const canVote = isActive && !proposal.hasVoted;
 
+  const handleOptionClick = (index: number) => {
+    if (canVote) {
+      setSelectedOption(selectedOption === index ? null : index);
+    }
+  };
+
   const handleVote = async () => {
-    if (!selectedOption || isVoting) return;
+    if (selectedOption === null || isVoting) return;
 
     setIsVoting(true);
     try {
-      const optionIndex = parseInt(selectedOption);
-      const success = await votingContract.castVote(proposal.id, optionIndex);
+      const success = await votingContract.castVote(proposal.id, selectedOption);
       
       if (success) {
         toast({
@@ -193,44 +195,55 @@ export function ProposalCard({ proposal, userIsAdmin, onVoteSuccess }: ProposalC
               })}
             </div>
           ) : canVote ? (
-            // Show Voting Interface with Clear Radio Buttons
+            // Show Voting Interface with Check Icons
             <div className="space-y-4">
               <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                <div className="flex items-center space-x-2 mb-3">
+                <div className="flex items-center space-x-2 mb-4">
                   <Vote className="h-4 w-4 text-blue-600" />
                   <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
                     Select your choice (your vote will be encrypted)
                   </span>
                 </div>
                 
-                <RadioGroup value={selectedOption} onValueChange={setSelectedOption} className="space-y-3">
+                <div className="space-y-2">
                   {proposal.options.map((option, index) => (
-                    <div key={index} className="flex items-center space-x-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                      <RadioGroupItem 
-                        value={index.toString()} 
-                        id={`option-${index}`}
-                        className="border-2 border-primary data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-                      />
-                      <Label 
-                        htmlFor={`option-${index}`} 
-                        className="cursor-pointer flex-1 font-medium text-foreground"
-                      >
-                        <div className="flex items-center space-x-2">
-                          <Circle className="h-4 w-4 text-muted-foreground" />
-                          <span>{option}</span>
+                    <div 
+                      key={index} 
+                      onClick={() => handleOptionClick(index)}
+                      className={`
+                        relative p-4 rounded-lg border-2 cursor-pointer transition-all duration-200
+                        ${selectedOption === index 
+                          ? 'border-primary bg-primary/5 shadow-sm' 
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800/50'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-foreground pr-8">
+                          {option}
+                        </span>
+                        
+                        {/* Check Icon in Top Right Corner */}
+                        <div className={`
+                          absolute top-3 right-3 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-200
+                          ${selectedOption === index 
+                            ? 'border-primary bg-primary text-primary-foreground' 
+                            : 'border-gray-300 dark:border-gray-600'
+                          }
+                        `}>
+                          {selectedOption === index && (
+                            <Check className="h-3 w-3" />
+                          )}
                         </div>
-                      </Label>
-                      {selectedOption === index.toString() && (
-                        <CheckCircle className="h-4 w-4 text-primary" />
-                      )}
+                      </div>
                     </div>
                   ))}
-                </RadioGroup>
+                </div>
               </div>
               
               <Button 
                 onClick={handleVote}
-                disabled={!selectedOption || isVoting}
+                disabled={selectedOption === null || isVoting}
                 className="w-full"
                 size="lg"
               >
@@ -247,12 +260,12 @@ export function ProposalCard({ proposal, userIsAdmin, onVoteSuccess }: ProposalC
                 )}
               </Button>
               
-              {selectedOption && (
+              {selectedOption !== null && (
                 <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
                   <div className="flex items-center space-x-2">
                     <Lock className="h-4 w-4" />
                     <span>
-                      You selected: <strong>{proposal.options[parseInt(selectedOption)]}</strong>
+                      You selected: <strong>{proposal.options[selectedOption]}</strong>
                     </span>
                   </div>
                   <p className="mt-1">Your vote will be encrypted using FHE technology for complete privacy.</p>
@@ -264,8 +277,7 @@ export function ProposalCard({ proposal, userIsAdmin, onVoteSuccess }: ProposalC
             <div className="space-y-2">
               {proposal.options.map((option, index) => (
                 <div key={index} className="p-4 border rounded-lg bg-muted/20 border-border">
-                  <div className="flex items-center space-x-3">
-                    <Dot className="h-5 w-5 text-muted-foreground" />
+                  <div className="flex items-center justify-between">
                     <span className="font-medium">{option}</span>
                     {proposal.hasVoted && (
                       <Badge variant="outline" className="text-xs">
