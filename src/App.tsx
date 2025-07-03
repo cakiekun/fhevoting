@@ -111,7 +111,7 @@ function App() {
   };
 
   const LandingPage = () => (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-background dark:via-background dark:to-muted/50">
       <div className="container mx-auto px-4 py-12">
         <div className="max-w-4xl mx-auto space-y-12">
           {/* Hero Section */}
@@ -144,7 +144,7 @@ function App() {
 
           {/* Features Grid */}
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            <Card className="relative overflow-hidden">
+            <Card className="relative overflow-hidden border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20">
               <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent" />
               <CardHeader>
                 <Lock className="h-8 w-8 text-blue-500 mb-2" />
@@ -162,7 +162,7 @@ function App() {
               </CardContent>
             </Card>
 
-            <Card className="relative overflow-hidden">
+            <Card className="relative overflow-hidden border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20">
               <div className="absolute inset-0 bg-gradient-to-br from-green-500/10 to-transparent" />
               <CardHeader>
                 <CheckCircle className="h-8 w-8 text-green-500 mb-2" />
@@ -180,7 +180,7 @@ function App() {
               </CardContent>
             </Card>
 
-            <Card className="relative overflow-hidden">
+            <Card className="relative overflow-hidden border-purple-200 bg-purple-50/50 dark:border-purple-800 dark:bg-purple-950/20">
               <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-transparent" />
               <CardHeader>
                 <Zap className="h-8 w-8 text-purple-500 mb-2" />
@@ -198,7 +198,7 @@ function App() {
               </CardContent>
             </Card>
 
-            <Card className="relative overflow-hidden">
+            <Card className="relative overflow-hidden border-orange-200 bg-orange-50/50 dark:border-orange-800 dark:bg-orange-950/20">
               <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-transparent" />
               <CardHeader>
                 <Shield className="h-8 w-8 text-orange-500 mb-2" />
@@ -216,7 +216,7 @@ function App() {
               </CardContent>
             </Card>
 
-            <Card className="relative overflow-hidden">
+            <Card className="relative overflow-hidden border-teal-200 bg-teal-50/50 dark:border-teal-800 dark:bg-teal-950/20">
               <div className="absolute inset-0 bg-gradient-to-br from-teal-500/10 to-transparent" />
               <CardHeader>
                 <Network className="h-8 w-8 text-teal-500 mb-2" />
@@ -234,7 +234,7 @@ function App() {
               </CardContent>
             </Card>
 
-            <Card className="relative overflow-hidden">
+            <Card className="relative overflow-hidden border-pink-200 bg-pink-50/50 dark:border-pink-800 dark:bg-pink-950/20">
               <div className="absolute inset-0 bg-gradient-to-br from-pink-500/10 to-transparent" />
               <CardHeader>
                 <Vote className="h-8 w-8 text-pink-500 mb-2" />
@@ -276,7 +276,7 @@ function App() {
   );
 
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="voting-theme">
+    <ThemeProvider defaultTheme="light" storageKey="voting-theme">
       <div className="min-h-screen bg-background">
         <Header
           userProfile={contractState.userProfile}

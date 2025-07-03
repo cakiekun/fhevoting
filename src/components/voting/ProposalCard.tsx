@@ -14,7 +14,9 @@ import {
   Vote,
   Eye,
   AlertCircle,
-  Lock
+  Lock,
+  Circle,
+  Dot
 } from 'lucide-react';
 import { Proposal } from '@/types/voting';
 import { votingContract } from '@/lib/contract';
@@ -120,7 +122,7 @@ export function ProposalCard({ proposal, userIsAdmin, onVoteSuccess }: ProposalC
   const winner = getWinningOption();
 
   return (
-    <Card className="transition-all duration-200 hover:shadow-lg">
+    <Card className="transition-all duration-200 hover:shadow-lg bg-card border-border">
       <CardHeader>
         <div className="flex items-start justify-between">
           <div className="space-y-2">
@@ -128,7 +130,7 @@ export function ProposalCard({ proposal, userIsAdmin, onVoteSuccess }: ProposalC
             <div className="flex items-center space-x-2">
               {getStatusBadge()}
               {proposal.hasVoted && (
-                <Badge variant="outline" className="text-green-600">
+                <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50 dark:bg-green-950 dark:border-green-800">
                   <CheckCircle className="h-3 w-3 mr-1" />
                   Voted
                 </Badge>
@@ -191,51 +193,100 @@ export function ProposalCard({ proposal, userIsAdmin, onVoteSuccess }: ProposalC
               })}
             </div>
           ) : canVote ? (
-            // Show Voting Interface
+            // Show Voting Interface with Clear Radio Buttons
             <div className="space-y-4">
-              <RadioGroup value={selectedOption} onValueChange={setSelectedOption}>
-                {proposal.options.map((option, index) => (
-                  <div key={index} className="flex items-center space-x-2">
-                    <RadioGroupItem value={index.toString()} id={`option-${index}`} />
-                    <Label htmlFor={`option-${index}`} className="cursor-pointer">
-                      {option}
-                    </Label>
-                  </div>
-                ))}
-              </RadioGroup>
+              <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <div className="flex items-center space-x-2 mb-3">
+                  <Vote className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                    Select your choice (your vote will be encrypted)
+                  </span>
+                </div>
+                
+                <RadioGroup value={selectedOption} onValueChange={setSelectedOption} className="space-y-3">
+                  {proposal.options.map((option, index) => (
+                    <div key={index} className="flex items-center space-x-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                      <RadioGroupItem 
+                        value={index.toString()} 
+                        id={`option-${index}`}
+                        className="border-2 border-primary data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                      />
+                      <Label 
+                        htmlFor={`option-${index}`} 
+                        className="cursor-pointer flex-1 font-medium text-foreground"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Circle className="h-4 w-4 text-muted-foreground" />
+                          <span>{option}</span>
+                        </div>
+                      </Label>
+                      {selectedOption === index.toString() && (
+                        <CheckCircle className="h-4 w-4 text-primary" />
+                      )}
+                    </div>
+                  ))}
+                </RadioGroup>
+              </div>
               
               <Button 
                 onClick={handleVote}
                 disabled={!selectedOption || isVoting}
                 className="w-full"
+                size="lg"
               >
-                {isVoting ? 'Casting Encrypted Vote...' : 'Cast Encrypted Vote'}
+                {isVoting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Casting Encrypted Vote...
+                  </>
+                ) : (
+                  <>
+                    <Lock className="h-4 w-4 mr-2" />
+                    Cast Encrypted Vote
+                  </>
+                )}
               </Button>
+              
+              {selectedOption && (
+                <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <Lock className="h-4 w-4" />
+                    <span>
+                      You selected: <strong>{proposal.options[parseInt(selectedOption)]}</strong>
+                    </span>
+                  </div>
+                  <p className="mt-1">Your vote will be encrypted using FHE technology for complete privacy.</p>
+                </div>
+              )}
             </div>
           ) : (
             // Show Options (No Voting)
             <div className="space-y-2">
               {proposal.options.map((option, index) => (
-                <div key={index} className="p-3 border rounded-lg bg-muted/20">
-                  <span className="font-medium">{option}</span>
-                  {proposal.hasVoted && (
-                    <span className="ml-2 text-sm text-muted-foreground">
-                      (Vote encrypted)
-                    </span>
-                  )}
+                <div key={index} className="p-4 border rounded-lg bg-muted/20 border-border">
+                  <div className="flex items-center space-x-3">
+                    <Dot className="h-5 w-5 text-muted-foreground" />
+                    <span className="font-medium">{option}</span>
+                    {proposal.hasVoted && (
+                      <Badge variant="outline" className="text-xs">
+                        <Lock className="h-3 w-3 mr-1" />
+                        Vote encrypted
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               ))}
               
               {proposal.hasVoted && (
-                <div className="flex items-center text-sm text-green-600 mt-2">
-                  <CheckCircle className="h-4 w-4 mr-1" />
+                <div className="flex items-center text-sm text-green-600 mt-3 bg-green-50 dark:bg-green-950/20 p-3 rounded-lg border border-green-200 dark:border-green-800">
+                  <CheckCircle className="h-4 w-4 mr-2" />
                   Your vote has been recorded and encrypted
                 </div>
               )}
               
               {hasEnded && !canVote && !proposal.hasVoted && (
-                <div className="flex items-center text-sm text-muted-foreground mt-2">
-                  <XCircle className="h-4 w-4 mr-1" />
+                <div className="flex items-center text-sm text-muted-foreground mt-3 bg-muted/50 p-3 rounded-lg">
+                  <XCircle className="h-4 w-4 mr-2" />
                   Voting period has ended
                 </div>
               )}

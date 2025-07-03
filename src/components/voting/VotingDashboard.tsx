@@ -18,7 +18,10 @@ import {
   Info,
   AlertTriangle,
   Wifi,
-  WifiOff
+  WifiOff,
+  Calendar,
+  Users,
+  FileText
 } from 'lucide-react';
 import { ProposalCard } from './ProposalCard';
 import { CreateProposalDialog } from './CreateProposalDialog';
@@ -125,8 +128,31 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
 
   const connectionStatus = getConnectionStatus();
 
+  const EmptyStateCard = ({ 
+    icon: Icon, 
+    title, 
+    description, 
+    action 
+  }: { 
+    icon: any, 
+    title: string, 
+    description: string, 
+    action?: React.ReactNode 
+  }) => (
+    <Card className="bg-gradient-to-br from-slate-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 border-dashed">
+      <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+        <div className="rounded-full bg-muted p-4 mb-4">
+          <Icon className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <h3 className="text-lg font-semibold mb-2">{title}</h3>
+        <p className="text-muted-foreground max-w-md mb-4">{description}</p>
+        {action}
+      </CardContent>
+    </Card>
+  );
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 bg-background">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -321,7 +347,7 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
 
       {/* Main Content */}
       <Tabs defaultValue="active" className="space-y-4">
-        <TabsList>
+        <TabsList className="bg-muted">
           <TabsTrigger value="active" className="flex items-center space-x-2">
             <Clock className="h-4 w-4" />
             <span>Active ({activeProposals.length})</span>
@@ -331,7 +357,7 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
             <span>Completed ({completedProposals.length})</span>
           </TabsTrigger>
           <TabsTrigger value="pending" className="flex items-center space-x-2">
-            <Clock className="h-4 w-4" />
+            <Calendar className="h-4 w-4" />
             <span>Pending ({pendingProposals.length})</span>
           </TabsTrigger>
           {userProfile.isAdmin && (
@@ -355,23 +381,18 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
               ))}
             </div>
           ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <Vote className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No Active Proposals</h3>
-                <p className="text-muted-foreground text-center">
-                  {isSimulation 
-                    ? "In simulation mode, you can create demo proposals to test the system."
-                    : "There are currently no active proposals accepting votes."
-                  }
-                </p>
-                {userProfile.isAdmin && (
-                  <div className="mt-4">
-                    <CreateProposalDialog onSuccess={onRefresh} />
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <EmptyStateCard
+              icon={Vote}
+              title="No Active Proposals"
+              description={
+                isSimulation 
+                  ? "In simulation mode, you can create demo proposals to test the system."
+                  : "There are currently no active proposals accepting votes. Check back later or create a new proposal if you're an admin."
+              }
+              action={userProfile.isAdmin && (
+                <CreateProposalDialog onSuccess={onRefresh} />
+              )}
+            />
           )}
         </TabsContent>
 
@@ -388,15 +409,11 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
               ))}
             </div>
           ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <CheckCircle className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No Completed Proposals</h3>
-                <p className="text-muted-foreground text-center">
-                  Completed proposals will appear here once voting ends.
-                </p>
-              </CardContent>
-            </Card>
+            <EmptyStateCard
+              icon={CheckCircle}
+              title="No Completed Proposals"
+              description="Completed proposals will appear here once voting ends and results are revealed. This includes all proposals that have finished their voting period."
+            />
           )}
         </TabsContent>
 
@@ -413,15 +430,11 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
               ))}
             </div>
           ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <Clock className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No Pending Proposals</h3>
-                <p className="text-muted-foreground text-center">
-                  Proposals scheduled for future voting will appear here.
-                </p>
-              </CardContent>
-            </Card>
+            <EmptyStateCard
+              icon={Calendar}
+              title="No Pending Proposals"
+              description="Proposals scheduled for future voting will appear here. These are proposals that have been created but their voting period hasn't started yet."
+            />
           )}
         </TabsContent>
 
