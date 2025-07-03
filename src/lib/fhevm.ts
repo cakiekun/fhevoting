@@ -12,25 +12,14 @@ const ZAMA_CONFIG = {
   chainId: 11155111, // Sepolia
   network: "sepolia",
   
-  // Contract addresses from environment
+  // Contract addresses
   executorAddress: import.meta.env.VITE_FHEVM_EXECUTOR_CONTRACT || "0x848B0066793BcC60346Da1F49049357399B8D595",
   aclAddress: import.meta.env.VITE_ACL_CONTRACT || "0x687820221192C5B662b25367F70076A37bc79b6c",
-  hcuLimitAddress: import.meta.env.VITE_HCU_LIMIT_CONTRACT || "0x594BB474275918AF9609814E68C61B1587c5F838",
   kmsVerifierAddress: import.meta.env.VITE_KMS_VERIFIER_CONTRACT || "0x1364cBBf2cDF5032C47d8226a6f6FBD2AFCDacAC",
   inputVerifierAddress: import.meta.env.VITE_INPUT_VERIFIER_CONTRACT || "0xbc91f3daD1A5F19F8390c400196e58073B6a0BC4",
-  decryptionOracleAddress: import.meta.env.VITE_DECRYPTION_ORACLE_CONTRACT || "0xa02Cda4Ca3a71D7C46997716F4283aa851C28812",
-  decryptionAddress: import.meta.env.VITE_DECRYPTION_ADDRESS || "0xb6E160B1ff80D67Bfe90A85eE06Ce0A2613607D1",
-  inputVerificationAddress: import.meta.env.VITE_INPUT_VERIFICATION_ADDRESS || "0x7048C39f048125eDa9d678AEbaDfB22F7900a29F",
   
-  // Relayer configuration
-  relayerUrl: import.meta.env.VITE_RELAYER_URL || "https://relayer.testnet.zama.cloud",
-  
-  // Gateway endpoints for public key retrieval
-  gateways: [
-    "https://gateway.sepolia.zama.ai",
-    "https://fhevm-gateway.zama.ai",
-    "https://api.zama.ai/fhevm"
-  ]
+  // Relayer URL - the only external service needed for web apps
+  relayerUrl: import.meta.env.VITE_RELAYER_URL || "https://relayer.testnet.zama.cloud"
 };
 
 export class FHEVMClient {
@@ -39,7 +28,6 @@ export class FHEVMClient {
   private isReady: boolean = false;
   private publicKey: string | null = null;
   private isDevelopmentMode: boolean = false;
-  private relayerClient: any = null;
 
   async init(provider: BrowserProvider): Promise<void> {
     this.provider = provider;
@@ -48,7 +36,7 @@ export class FHEVMClient {
     try {
       debugLog("Starting FHEVM initialization...", {
         developmentMode: this.isDevelopmentMode,
-        zamaConfig: ZAMA_CONFIG,
+        relayerUrl: ZAMA_CONFIG.relayerUrl
       });
 
       // Verify network
@@ -61,11 +49,8 @@ export class FHEVMClient {
 
       debugLog("✅ Network verified", { chainId, name: network.name });
 
-      // Initialize relayer client first
-      await this.initializeRelayer();
-
-      // Get public key from relayer or gateway
-      await this.fetchPublicKey();
+      // Get public key from relayer
+      await this.fetchPublicKeyFromRelayer();
 
       // Initialize FHEVM instance
       if (!this.isDevelopmentMode) {
@@ -85,8 +70,7 @@ export class FHEVMClient {
       debugLog("✅ FHEVM client initialization completed", {
         isReady: this.isReady,
         developmentMode: this.isDevelopmentMode,
-        hasPublicKey: !!this.publicKey,
-        hasRelayer: !!this.relayerClient
+        hasPublicKey: !!this.publicKey
       });
 
     } catch (error) {
@@ -96,99 +80,36 @@ export class FHEVMClient {
     }
   }
 
-  private async initializeRelayer(): Promise<void> {
+  private async fetchPublicKeyFromRelayer(): Promise<void> {
+    debugLog("Fetching public key from Zama relayer...");
+
     try {
-      debugLog("Initializing Zama Relayer client...");
+      const response = await fetch(`${ZAMA_CONFIG.relayerUrl}/public-key`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        }
+      });
 
-      // Try to import and initialize the relayer SDK
-      try {
-        const relayerModule = await import('@zama-ai/relayer-sdk');
-        
-        this.relayerClient = new relayerModule.RelayerClient({
-          url: ZAMA_CONFIG.relayerUrl,
-          chainId: ZAMA_CONFIG.chainId
-        });
-
-        debugLog("✅ Relayer client initialized", {
-          url: ZAMA_CONFIG.relayerUrl,
-          chainId: ZAMA_CONFIG.chainId
-        });
-
-      } catch (importError) {
-        debugLog("⚠️ Relayer SDK not available, using direct API calls", importError);
-        // Fallback to direct API calls if SDK is not available
-        this.relayerClient = {
-          url: ZAMA_CONFIG.relayerUrl,
-          chainId: ZAMA_CONFIG.chainId
-        };
+      if (!response.ok) {
+        throw new Error(`Relayer responded with status: ${response.status}`);
       }
+
+      const data = await response.json();
+      this.publicKey = data.publicKey || data.public_key || data.key;
+      
+      if (!this.publicKey) {
+        throw new Error("Public key not found in relayer response");
+      }
+
+      debugLog("✅ Public key fetched from relayer", {
+        keyLength: this.publicKey.length
+      });
 
     } catch (error) {
-      debugLog("❌ Relayer initialization failed", error);
+      debugLog("❌ Failed to fetch public key from relayer", error);
       throw error;
     }
-  }
-
-  private async fetchPublicKey(): Promise<void> {
-    debugLog("Fetching public key from Zama infrastructure...");
-
-    // Try relayer first
-    if (this.relayerClient) {
-      try {
-        const response = await fetch(`${ZAMA_CONFIG.relayerUrl}/public-key`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          this.publicKey = data.publicKey || data.public_key || data.key;
-          
-          if (this.publicKey) {
-            debugLog("✅ Public key fetched from relayer", {
-              keyLength: this.publicKey.length
-            });
-            return;
-          }
-        }
-      } catch (error) {
-        debugLog("⚠️ Failed to fetch public key from relayer", error);
-      }
-    }
-
-    // Fallback to gateways
-    for (const gateway of ZAMA_CONFIG.gateways) {
-      try {
-        debugLog(`Trying gateway: ${gateway}`);
-
-        const response = await fetch(`${gateway}/public-key`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          this.publicKey = data.publicKey || data.public_key || data.key;
-
-          if (this.publicKey) {
-            debugLog("✅ Public key fetched from gateway", {
-              gateway,
-              keyLength: this.publicKey.length
-            });
-            return;
-          }
-        }
-      } catch (error) {
-        debugLog(`❌ Gateway ${gateway} failed:`, error);
-        continue;
-      }
-    }
-
-    throw new Error("Failed to fetch public key from all sources");
   }
 
   private async initializeFHEVMJS(): Promise<void> {
@@ -241,7 +162,6 @@ export class FHEVMClient {
     try {
       debugLog("🔐 Encrypting value with FHEVM", { value });
 
-      // Use the FHEVM instance to encrypt
       const encrypted = this.instance.encrypt32(value);
 
       debugLog("✅ Encryption successful", {
@@ -263,7 +183,6 @@ export class FHEVMClient {
   private simulateEncryption(value: number): { data: Uint8Array; proof: Uint8Array } {
     debugLog("🔒 Using simulated encryption", { value });
 
-    // Create deterministic but secure-looking simulation
     const data = new Uint8Array(32);
     const proof = new Uint8Array(32);
 
@@ -420,7 +339,6 @@ export class FHEVMClient {
       isReady: this.isReady,
       hasInstance: !!this.instance,
       hasPublicKey: !!this.publicKey,
-      hasRelayer: !!this.relayerClient,
       isDevelopmentMode: this.isDevelopmentMode,
       zamaConfig: ZAMA_CONFIG,
       provider: !!this.provider,
@@ -428,35 +346,19 @@ export class FHEVMClient {
     };
   }
 
-  async testConnectivity(): Promise<{ [key: string]: boolean }> {
-    const results: { [key: string]: boolean } = {};
-
-    // Test relayer
+  async testRelayerConnectivity(): Promise<boolean> {
     try {
       const response = await fetch(`${ZAMA_CONFIG.relayerUrl}/health`, {
         method: "GET",
         timeout: 3000
       });
-      results["relayer"] = response.ok;
+      const isOnline = response.ok;
+      debugLog("Relayer connectivity test", { isOnline, url: ZAMA_CONFIG.relayerUrl });
+      return isOnline;
     } catch {
-      results["relayer"] = false;
+      debugLog("Relayer connectivity test failed", { url: ZAMA_CONFIG.relayerUrl });
+      return false;
     }
-
-    // Test gateways
-    for (const gateway of ZAMA_CONFIG.gateways) {
-      try {
-        const response = await fetch(`${gateway}/health`, {
-          method: "GET",
-          timeout: 3000
-        });
-        results[gateway] = response.ok;
-      } catch {
-        results[gateway] = false;
-      }
-    }
-
-    debugLog("Connectivity test results", results);
-    return results;
   }
 }
 

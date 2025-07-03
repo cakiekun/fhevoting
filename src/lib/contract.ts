@@ -2,7 +2,7 @@ import { ethers } from "ethers";
 import { Proposal, UserProfile } from "@/types/voting";
 import { fhevmClient, debugLog } from "./fhevm";
 
-// Updated ABI to match the actual smart contract interface
+// Smart contract ABI
 const VOTING_CONTRACT_ABI = [
   // Read functions
   "function proposalCount() view returns (uint256)",
@@ -39,52 +39,6 @@ const SEPOLIA_CONFIG = {
 
 // Contract address from environment
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000";
-
-// Mock proposals for simulation mode
-const MOCK_PROPOSALS: Proposal[] = [
-  {
-    id: 0,
-    title: "Increase DAO Treasury Allocation",
-    description: "This proposal suggests increasing the DAO treasury allocation by 10% to fund more community initiatives and development projects. The additional funds would be used for grants, partnerships, and infrastructure improvements.",
-    options: ["Yes, increase by 10%", "No, keep current allocation", "Increase by 5% only", "Decrease by 5%"],
-    startTime: Date.now() - 3600000, // 1 hour ago
-    endTime: Date.now() + 86400000, // 24 hours from now
-    totalVotes: 12,
-    creator: "0x1234567890123456789012345678901234567890",
-    active: true,
-    resultsRevealed: false,
-    revealedResults: [],
-    hasVoted: false
-  },
-  {
-    id: 1,
-    title: "Implement New Governance Token Staking",
-    description: "Proposal to implement a new staking mechanism for governance tokens that would provide additional voting power and rewards for long-term holders.",
-    options: ["Implement with 2x voting power", "Implement with 1.5x voting power", "No staking mechanism", "Different reward structure"],
-    startTime: Date.now() + 3600000, // 1 hour from now
-    endTime: Date.now() + 172800000, // 48 hours from now
-    totalVotes: 0,
-    creator: "0x1234567890123456789012345678901234567890",
-    active: true,
-    resultsRevealed: false,
-    revealedResults: [],
-    hasVoted: false
-  },
-  {
-    id: 2,
-    title: "Partnership with DeFi Protocol",
-    description: "Vote on whether the DAO should enter into a strategic partnership with a major DeFi protocol to expand our ecosystem.",
-    options: ["Approve partnership", "Reject partnership", "Request more details", "Negotiate better terms"],
-    startTime: Date.now() - 172800000, // 48 hours ago
-    endTime: Date.now() - 3600000, // 1 hour ago (ended)
-    totalVotes: 45,
-    creator: "0x1234567890123456789012345678901234567890",
-    active: true,
-    resultsRevealed: true,
-    revealedResults: [28, 12, 3, 2],
-    hasVoted: true
-  }
-];
 
 export class VotingContract {
   private contract: ethers.Contract | null = null;
@@ -253,7 +207,7 @@ export class VotingContract {
           address,
           isAuthorized: true,
           isAdmin: true,
-          votedProposals: [2]
+          votedProposals: []
         };
         debugLog("Simulation mode: returning mock profile", profile);
         return profile;
@@ -303,13 +257,8 @@ export class VotingContract {
 
   async getActiveProposals(): Promise<Proposal[]> {
     if (this.isSimulationMode) {
-      const mockProposals = MOCK_PROPOSALS.map(proposal => ({
-        ...proposal,
-        hasVoted: proposal.id === 2
-      }));
-
-      debugLog("Simulation mode: returning mock proposals", mockProposals);
-      return mockProposals;
+      debugLog("Simulation mode: returning empty proposals array");
+      return [];
     }
 
     if (!this.contract) return [];
@@ -370,25 +319,7 @@ export class VotingContract {
       });
 
       await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const newProposal: Proposal = {
-        id: MOCK_PROPOSALS.length,
-        title,
-        description,
-        options,
-        startTime: Date.now(),
-        endTime: Date.now() + duration * 60 * 60 * 1000,
-        totalVotes: 0,
-        creator: await this.signer?.getAddress() || "0x0000000000000000000000000000000000000000",
-        active: true,
-        resultsRevealed: false,
-        revealedResults: [],
-        hasVoted: false
-      };
-
-      MOCK_PROPOSALS.push(newProposal);
-      debugLog("Mock proposal added", newProposal);
-
+      debugLog("Mock proposal created successfully");
       return true;
     }
 
@@ -424,13 +355,6 @@ export class VotingContract {
         encryptedVoteLength: encryptedVote.length,
         proofLength: proof.length
       });
-
-      // Update mock proposal
-      const proposal = MOCK_PROPOSALS.find(p => p.id === proposalId);
-      if (proposal) {
-        proposal.hasVoted = true;
-        proposal.totalVotes++;
-      }
 
       await new Promise(resolve => setTimeout(resolve, 3000));
       return true;
@@ -515,19 +439,6 @@ export class VotingContract {
   async revealResults(proposalId: number): Promise<boolean> {
     if (this.isSimulationMode) {
       debugLog("🔧 Simulation mode: revealing results", { proposalId });
-
-      const proposal = MOCK_PROPOSALS.find(p => p.id === proposalId);
-      if (proposal && !proposal.resultsRevealed) {
-        proposal.resultsRevealed = true;
-        const totalVotes = proposal.totalVotes;
-        const results = proposal.options.map(() => Math.floor(Math.random() * totalVotes));
-        const sum = results.reduce((a, b) => a + b, 0);
-        if (sum !== totalVotes && totalVotes > 0) {
-          results[0] += totalVotes - sum;
-        }
-        proposal.revealedResults = results;
-      }
-
       await new Promise(resolve => setTimeout(resolve, 2000));
       return true;
     }
@@ -542,11 +453,6 @@ export class VotingContract {
         debugLog("🔓 Requesting decryption through Zama relayer...");
         
         try {
-          // This would typically involve getting the encrypted votes from the contract
-          // and requesting decryption through the relayer
-          const userAddress = await this.signer!.getAddress();
-          
-          // For now, we'll use a placeholder implementation
           // In a real implementation, you would:
           // 1. Get encrypted votes from the contract
           // 2. Request decryption through the relayer
@@ -681,13 +587,13 @@ export class VotingContract {
       hasContract: !!this.contract,
       hasProvider: !!this.provider,
       hasSigner: !!this.signer,
-      mockProposalsCount: MOCK_PROPOSALS.length,
       fhevmDebug: fhevmClient.getDebugInfo()
     };
   }
 
-  async testGateways() {
-    return await fhevmClient.testConnectivity();
+  async testConnectivity() {
+    const relayerOnline = await fhevmClient.testRelayerConnectivity();
+    return { relayer: relayerOnline };
   }
 }
 

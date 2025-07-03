@@ -16,7 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, X, Calendar, Lightbulb, Vote, Sparkles, Target } from 'lucide-react';
+import { Plus, X, Calendar, Lightbulb, Vote, Target } from 'lucide-react';
 import { votingContract } from '@/lib/contract';
 import { toast } from '@/hooks/use-toast';
 
@@ -32,30 +32,10 @@ interface CreateProposalDialogProps {
   onSuccess: () => void;
 }
 
-// Predefined option templates for common proposal types
-const OPTION_TEMPLATES = {
-  yesNo: ['Yes', 'No'],
-  yesNoAbstain: ['Yes', 'No', 'Abstain'],
-  approval: ['Approve', 'Reject', 'Request Changes'],
-  funding: ['Approve Full Amount', 'Approve Partial Amount', 'Reject Funding', 'Request More Details'],
-  governance: ['Implement Immediately', 'Implement with Modifications', 'Delay Implementation', 'Reject Proposal'],
-  partnership: ['Approve Partnership', 'Reject Partnership', 'Negotiate Terms', 'Request Due Diligence']
-};
-
-const TEMPLATE_DESCRIPTIONS = {
-  yesNo: 'Simple binary choice',
-  yesNoAbstain: 'Binary choice with abstention option',
-  approval: 'Standard approval process',
-  funding: 'Funding request options',
-  governance: 'Governance change options',
-  partnership: 'Partnership proposal options'
-};
-
 export function CreateProposalDialog({ onSuccess }: CreateProposalDialogProps) {
   const [open, setOpen] = useState(false);
   const [options, setOptions] = useState(['', '']);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
 
   const form = useForm<ProposalForm>({
     resolver: zodResolver(proposalSchema),
@@ -82,19 +62,6 @@ export function CreateProposalDialog({ onSuccess }: CreateProposalDialogProps) {
     const newOptions = [...options];
     newOptions[index] = value;
     setOptions(newOptions);
-  };
-
-  const applyTemplate = (templateKey: string) => {
-    const template = OPTION_TEMPLATES[templateKey as keyof typeof OPTION_TEMPLATES];
-    if (template) {
-      setOptions([...template]);
-      setSelectedTemplate(templateKey);
-    }
-  };
-
-  const clearOptions = () => {
-    setOptions(['', '']);
-    setSelectedTemplate(null);
   };
 
   const onSubmit = async (data: ProposalForm) => {
@@ -129,7 +96,6 @@ export function CreateProposalDialog({ onSuccess }: CreateProposalDialogProps) {
         // Reset form
         form.reset();
         setOptions(['', '']);
-        setSelectedTemplate(null);
         setOpen(false);
         onSuccess();
       } else {
@@ -154,7 +120,7 @@ export function CreateProposalDialog({ onSuccess }: CreateProposalDialogProps) {
           <span>Create Proposal</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             <Lightbulb className="h-5 w-5 text-primary" />
@@ -185,7 +151,7 @@ export function CreateProposalDialog({ onSuccess }: CreateProposalDialogProps) {
             <Label htmlFor="description">Description</Label>
             <Textarea
               id="description"
-              placeholder="Provide a detailed description of the proposal, including background, rationale, and expected outcomes..."
+              placeholder="Provide a detailed description of the proposal..."
               rows={4}
               {...form.register('description')}
             />
@@ -217,57 +183,11 @@ export function CreateProposalDialog({ onSuccess }: CreateProposalDialogProps) {
           </div>
 
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label className="flex items-center space-x-1">
-                <Vote className="h-4 w-4" />
-                <span>Voting Options</span>
-              </Label>
-              <div className="flex items-center space-x-2">
-                <Sparkles className="h-4 w-4 text-primary" />
-                <span className="text-sm text-muted-foreground">Quick Templates</span>
-              </div>
-            </div>
+            <Label className="flex items-center space-x-1">
+              <Vote className="h-4 w-4" />
+              <span>Voting Options</span>
+            </Label>
 
-            {/* Option Templates */}
-            <Card className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/20 dark:to-purple-950/20 border-dashed">
-              <CardContent className="p-0">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {Object.entries(OPTION_TEMPLATES).map(([key, template]) => (
-                    <Button
-                      key={key}
-                      type="button"
-                      variant={selectedTemplate === key ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => applyTemplate(key)}
-                      className="h-auto p-2 flex flex-col items-start"
-                    >
-                      <span className="font-medium text-xs capitalize">{key.replace(/([A-Z])/g, ' $1')}</span>
-                      <span className="text-xs text-muted-foreground text-left">
-                        {TEMPLATE_DESCRIPTIONS[key as keyof typeof TEMPLATE_DESCRIPTIONS]}
-                      </span>
-                    </Button>
-                  ))}
-                </div>
-                <div className="mt-3 flex justify-between items-center">
-                  <p className="text-xs text-muted-foreground">
-                    Choose a template to quickly set up common voting options
-                  </p>
-                  {selectedTemplate && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={clearOptions}
-                      className="text-xs"
-                    >
-                      Clear Template
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Custom Options */}
             <div className="space-y-3">
               {options.map((option, index) => (
                 <div key={index} className="group">
@@ -323,7 +243,6 @@ export function CreateProposalDialog({ onSuccess }: CreateProposalDialogProps) {
                     <ul className="space-y-1">
                       <li>• Minimum 2 options required, maximum 10 allowed</li>
                       <li>• Make options clear and mutually exclusive</li>
-                      <li>• Consider adding "Abstain" for controversial topics</li>
                       <li>• All votes will be encrypted for complete privacy</li>
                     </ul>
                   </div>

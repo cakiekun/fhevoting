@@ -39,7 +39,7 @@ interface VotingDashboardProps {
 export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDashboardProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [showDebugInfo, setShowDebugInfo] = useState(false);
-  const [gatewayStatus, setGatewayStatus] = useState<{ [key: string]: boolean }>({});
+  const [connectivityStatus, setConnectivityStatus] = useState<{ [key: string]: boolean }>({});
 
   const activeProposals = proposals.filter(p => {
     const now = Date.now();
@@ -63,10 +63,10 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
     setTimeout(() => setRefreshing(false), 500);
   };
 
-  const testGateways = async () => {
-    debugLog('Testing gateway connectivity...');
-    const status = await votingContract.testGateways();
-    setGatewayStatus(status);
+  const testConnectivity = async () => {
+    debugLog('Testing connectivity...');
+    const status = await votingContract.testConnectivity();
+    setConnectivityStatus(status);
   };
 
   const getStats = () => {
@@ -95,9 +95,9 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
       isDebugMode
     });
 
-    // Test gateways on mount
+    // Test connectivity on mount
     if (isDebugMode) {
-      testGateways();
+      testConnectivity();
     }
   }, []);
 
@@ -107,7 +107,7 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
         color: 'yellow',
         icon: AlertTriangle,
         text: 'Simulation Mode',
-        description: 'Contract not deployed or gateway offline'
+        description: 'Contract not deployed or relayer offline'
       };
     } else if (isFHEVM) {
       return {
@@ -167,10 +167,10 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
               <Button 
                 variant="outline" 
                 size="sm"
-                onClick={testGateways}
+                onClick={testConnectivity}
               >
                 <Wifi className="h-4 w-4 mr-2" />
-                Test Gateways
+                Test Connectivity
               </Button>
               <Button 
                 variant="outline" 
@@ -203,7 +203,7 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
                   Running in Simulation Mode
                 </span>
                 <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-                  The smart contract is not deployed or Zama gateways are offline. All operations are simulated for demonstration purposes.
+                  The smart contract is not deployed or Zama relayer is offline. All operations are simulated for demonstration purposes.
                 </p>
               </div>
             </div>
@@ -228,19 +228,19 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
               </pre>
             </div>
             
-            {Object.keys(gatewayStatus).length > 0 && (
+            {Object.keys(connectivityStatus).length > 0 && (
               <div>
-                <h4 className="font-medium mb-2">Gateway Status:</h4>
+                <h4 className="font-medium mb-2">Connectivity Status:</h4>
                 <div className="space-y-1">
-                  {Object.entries(gatewayStatus).map(([gateway, status]) => (
-                    <div key={gateway} className="flex items-center space-x-2 text-xs">
+                  {Object.entries(connectivityStatus).map(([service, status]) => (
+                    <div key={service} className="flex items-center space-x-2 text-xs">
                       {status ? (
                         <Wifi className="h-3 w-3 text-green-500" />
                       ) : (
                         <WifiOff className="h-3 w-3 text-red-500" />
                       )}
                       <span className={status ? 'text-green-700' : 'text-red-700'}>
-                        {gateway}: {status ? 'Online' : 'Offline'}
+                        {service}: {status ? 'Online' : 'Offline'}
                       </span>
                     </div>
                   ))}
@@ -384,11 +384,7 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
             <EmptyStateCard
               icon={Vote}
               title="No Active Proposals"
-              description={
-                isSimulation 
-                  ? "In simulation mode, you can create demo proposals to test the system."
-                  : "There are currently no active proposals accepting votes. Check back later or create a new proposal if you're an admin."
-              }
+              description="There are currently no active proposals accepting votes. Check back later or create a new proposal if you're an admin."
               action={userProfile.isAdmin && (
                 <CreateProposalDialog onSuccess={onRefresh} />
               )}
@@ -412,7 +408,7 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
             <EmptyStateCard
               icon={CheckCircle}
               title="No Completed Proposals"
-              description="Completed proposals will appear here once voting ends and results are revealed. This includes all proposals that have finished their voting period."
+              description="Completed proposals will appear here once voting ends and results are revealed."
             />
           )}
         </TabsContent>
@@ -433,7 +429,7 @@ export function VotingDashboard({ userProfile, proposals, onRefresh }: VotingDas
             <EmptyStateCard
               icon={Calendar}
               title="No Pending Proposals"
-              description="Proposals scheduled for future voting will appear here. These are proposals that have been created but their voting period hasn't started yet."
+              description="Proposals scheduled for future voting will appear here."
             />
           )}
         </TabsContent>
