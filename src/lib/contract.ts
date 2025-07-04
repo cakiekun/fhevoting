@@ -87,14 +87,14 @@ export class VotingContract {
       this.contract = new ethers.Contract(CONTRACT_ADDRESS, VOTING_CONTRACT_ABI, this.signer);
       debugLog("Contract instance created", { address: CONTRACT_ADDRESS });
 
-      // Initialize FHEVM client
+      // Initialize FHEVM client with new Zama SDK
       try {
-        debugLog("Initializing FHEVM client...");
+        debugLog("Initializing FHEVM client with Zama Relayer SDK...");
         await fhevmClient.init(this.provider);
         this.isFHEVMEnabled = fhevmClient.isInitialized() && !fhevmClient.isSimulationMode();
 
         if (this.isFHEVMEnabled) {
-          debugLog("✅ FHEVM client initialized successfully");
+          debugLog("✅ FHEVM client initialized successfully with Zama SDK");
         } else {
           debugLog("⚠️ FHEVM client running in simulation mode");
         }
@@ -257,8 +257,8 @@ export class VotingContract {
 
   async getActiveProposals(): Promise<Proposal[]> {
     if (this.isSimulationMode) {
-      debugLog("Simulation mode: returning empty proposals array");
-      return [];
+      debugLog("Simulation mode: returning mock proposals");
+      return this.getMockProposals();
     }
 
     if (!this.contract) return [];
@@ -305,6 +305,26 @@ export class VotingContract {
       debugLog("❌ Failed to get proposals:", error);
       return [];
     }
+  }
+
+  private getMockProposals(): Proposal[] {
+    const now = Date.now();
+    return [
+      {
+        id: 0,
+        title: "Demo Proposal: Choose Development Priority",
+        description: "This is a demonstration proposal to showcase the FHE voting system. Which feature should we prioritize next?",
+        options: ["Enhanced Security Features", "Better User Interface", "Mobile Application"],
+        startTime: now - 3600000, // 1 hour ago
+        endTime: now + 86400000, // 24 hours from now
+        totalVotes: 15,
+        creator: "0x1234567890123456789012345678901234567890",
+        active: true,
+        resultsRevealed: false,
+        revealedResults: [],
+        hasVoted: false
+      }
+    ];
   }
 
   async createProposal(
@@ -377,7 +397,7 @@ export class VotingContract {
         try {
           const userAddress = await this.signer!.getAddress();
           
-          // Create encrypted input using FHEVM
+          // Create encrypted input using Zama Relayer SDK
           const input = await fhevmClient.createEncryptedInput(CONTRACT_ADDRESS, userAddress);
           input.addUint32(optionIndex);
           const encryptedInput = input.encrypt();

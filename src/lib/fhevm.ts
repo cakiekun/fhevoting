@@ -7,57 +7,51 @@ const debugLog = (message: string, data?: any) => {
   }
 };
 
-// Zama FHEVM configuration for Sepolia
-const ZAMA_CONFIG = {
-  chainId: 11155111, // Sepolia
-  network: "sepolia",
-  
-  // Contract addresses
-  executorAddress: import.meta.env.VITE_FHEVM_EXECUTOR_CONTRACT || "0x848B0066793BcC60346Da1F49049357399B8D595",
-  aclAddress: import.meta.env.VITE_ACL_CONTRACT || "0x687820221192C5B662b25367F70076A37bc79b6c",
-  kmsVerifierAddress: import.meta.env.VITE_KMS_VERIFIER_CONTRACT || "0x1364cBBf2cDF5032C47d8226a6f6FBD2AFCDacAC",
-  inputVerifierAddress: import.meta.env.VITE_INPUT_VERIFIER_CONTRACT || "0xbc91f3daD1A5F19F8390c400196e58073B6a0BC4",
-  
-  // Relayer URL - the only external service needed for web apps
-  relayerUrl: import.meta.env.VITE_RELAYER_URL || "https://relayer.testnet.zama.cloud"
-};
+// Declare global types for Zama SDK
+declare global {
+  interface Window {
+    ZamaSDK?: {
+      initSDK: () => Promise<void>;
+      createInstance: (config: any) => Promise<any>;
+      SepoliaConfig: any;
+    };
+  }
+}
 
 export class FHEVMClient {
   private instance: any = null;
   private provider: BrowserProvider | null = null;
   private isReady: boolean = false;
-  private publicKey: string | null = null;
   private isDevelopmentMode: boolean = false;
+  private sdkInitialized: boolean = false;
 
   async init(provider: BrowserProvider): Promise<void> {
     this.provider = provider;
     this.isDevelopmentMode = import.meta.env.VITE_DEVELOPMENT_MODE === "true";
 
     try {
-      debugLog("Starting FHEVM initialization...", {
+      debugLog("Starting FHEVM initialization with Zama Relayer SDK...", {
         developmentMode: this.isDevelopmentMode,
-        relayerUrl: ZAMA_CONFIG.relayerUrl
+        hasWindow: typeof window !== 'undefined',
+        hasZamaSDK: !!window.ZamaSDK
       });
 
       // Verify network
       const network = await provider.getNetwork();
       const chainId = Number(network.chainId);
 
-      if (chainId !== ZAMA_CONFIG.chainId) {
-        throw new Error(`Wrong network. Expected Sepolia (${ZAMA_CONFIG.chainId}), got ${chainId}`);
+      if (chainId !== 11155111) { // Sepolia
+        throw new Error(`Wrong network. Expected Sepolia (11155111), got ${chainId}`);
       }
 
       debugLog("✅ Network verified", { chainId, name: network.name });
 
-      // Get public key from relayer
-      await this.fetchPublicKeyFromRelayer();
-
-      // Initialize FHEVM instance
+      // Initialize Zama SDK
       if (!this.isDevelopmentMode) {
         try {
-          await this.initializeFHEVMJS();
-        } catch (fhevmError) {
-          debugLog("❌ fhevmjs initialization failed, switching to development mode", fhevmError);
+          await this.initializeZamaSDK();
+        } catch (sdkError) {
+          debugLog("❌ Zama SDK initialization failed, switching to development mode", sdkError);
           this.isDevelopmentMode = true;
         }
       }
@@ -70,7 +64,7 @@ export class FHEVMClient {
       debugLog("✅ FHEVM client initialization completed", {
         isReady: this.isReady,
         developmentMode: this.isDevelopmentMode,
-        hasPublicKey: !!this.publicKey
+        sdkInitialized: this.sdkInitialized
       });
 
     } catch (error) {
@@ -80,69 +74,35 @@ export class FHEVMClient {
     }
   }
 
-  private async fetchPublicKeyFromRelayer(): Promise<void> {
-    debugLog("Fetching public key from Zama relayer...");
-
+  private async initializeZamaSDK(): Promise<void> {
     try {
-      const response = await fetch(`${ZAMA_CONFIG.relayerUrl}/public-key`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        }
-      });
+      debugLog("Initializing Zama Relayer SDK...");
 
-      if (!response.ok) {
-        throw new Error(`Relayer responded with status: ${response.status}`);
+      // Check if SDK is available
+      if (!window.ZamaSDK) {
+        throw new Error("Zama SDK not loaded. Make sure the CDN script is included.");
       }
 
-      const data = await response.json();
-      this.publicKey = data.publicKey || data.public_key || data.key;
-      
-      if (!this.publicKey) {
-        throw new Error("Public key not found in relayer response");
-      }
+      const { initSDK, createInstance, SepoliaConfig } = window.ZamaSDK;
 
-      debugLog("✅ Public key fetched from relayer", {
-        keyLength: this.publicKey.length
-      });
+      // Initialize SDK
+      debugLog("Loading WASM...");
+      await initSDK();
+      this.sdkInitialized = true;
 
-    } catch (error) {
-      debugLog("❌ Failed to fetch public key from relayer", error);
-      throw error;
-    }
-  }
+      debugLog("Creating instance with Sepolia config...");
+      const config = { 
+        ...SepoliaConfig, 
+        network: window.ethereum 
+      };
 
-  private async initializeFHEVMJS(): Promise<void> {
-    try {
-      debugLog("Attempting to load fhevmjs...");
-
-      const fhevmModule = await import("fhevmjs");
-      const { createInstance } = fhevmModule;
-
-      if (!this.publicKey) {
-        throw new Error("Public key is required for FHEVM initialization");
-      }
-
-      debugLog("Creating FHEVM instance with Sepolia config", {
-        chainId: ZAMA_CONFIG.chainId,
-        publicKeyLength: this.publicKey.length,
-        aclAddress: ZAMA_CONFIG.aclAddress
-      });
-
-      // Create instance with proper Sepolia configuration
-      this.instance = await createInstance({
-        chainId: ZAMA_CONFIG.chainId,
-        publicKey: this.publicKey,
-        aclAddress: ZAMA_CONFIG.aclAddress,
-        kmsVerifierAddress: ZAMA_CONFIG.kmsVerifierAddress,
-        inputVerifierAddress: ZAMA_CONFIG.inputVerifierAddress
-      });
-
+      this.instance = await createInstance(config);
       this.isReady = true;
-      debugLog("✅ FHEVM instance created successfully");
+
+      debugLog("✅ Zama SDK initialized successfully");
 
     } catch (error) {
-      debugLog("❌ FHEVM instance creation failed", error);
+      debugLog("❌ Zama SDK initialization failed", error);
       throw error;
     }
   }
@@ -160,7 +120,7 @@ export class FHEVMClient {
     }
 
     try {
-      debugLog("🔐 Encrypting value with FHEVM", { value });
+      debugLog("🔐 Encrypting value with Zama SDK", { value });
 
       const encrypted = this.instance.encrypt32(value);
 
@@ -203,7 +163,7 @@ export class FHEVMClient {
 
     debugLog("Encrypting vote", {
       vote,
-      mode: this.isDevelopmentMode ? "simulation" : "fhevm"
+      mode: this.isDevelopmentMode ? "simulation" : "zama-sdk"
     });
 
     const encrypted = await this.encrypt32(vote);
@@ -218,13 +178,20 @@ export class FHEVMClient {
     if (this.isDevelopmentMode || !this.instance) {
       debugLog("🔧 Creating simulated encrypted input");
       return {
-        addUint32: (value: number) => ({ data: new Uint8Array(32), proof: new Uint8Array(32) }),
-        encrypt: () => ({ data: new Uint8Array(32), proof: new Uint8Array(32) })
+        addUint32: (value: number) => {
+          debugLog("Adding uint32 to simulated input", { value });
+          return this;
+        },
+        encrypt: () => {
+          const result = { data: new Uint8Array(32), proof: new Uint8Array(32) };
+          debugLog("Encrypting simulated input", { dataLength: result.data.length });
+          return result;
+        }
       };
     }
 
     try {
-      debugLog("Creating encrypted input", { contractAddress, userAddress });
+      debugLog("Creating encrypted input with Zama SDK", { contractAddress, userAddress });
       
       const input = this.instance.createEncryptedInput(contractAddress, userAddress);
       
@@ -237,62 +204,12 @@ export class FHEVMClient {
     }
   }
 
-  // Request decryption through relayer
-  async requestDecryption(
-    contractAddress: string,
-    ciphertext: string,
-    userAddress: string
-  ): Promise<any> {
-    if (this.isDevelopmentMode) {
-      debugLog("🔧 Simulating decryption request");
-      return { success: true, result: Math.floor(Math.random() * 100) };
-    }
-
-    try {
-      debugLog("Requesting decryption through relayer", {
-        contractAddress,
-        ciphertext: ciphertext.slice(0, 20) + "...",
-        userAddress
-      });
-
-      const response = await fetch(`${ZAMA_CONFIG.relayerUrl}/decrypt`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          contractAddress,
-          ciphertext,
-          userAddress,
-          chainId: ZAMA_CONFIG.chainId
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Decryption request failed: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      debugLog("✅ Decryption completed", result);
-      
-      return result;
-
-    } catch (error) {
-      debugLog("❌ Decryption request failed", error);
-      throw error;
-    }
-  }
-
   isInitialized(): boolean {
     return this.isReady;
   }
 
   getInstance() {
     return this.instance;
-  }
-
-  getZamaConfig() {
-    return ZAMA_CONFIG;
   }
 
   isSimulationMode(): boolean {
@@ -328,35 +245,29 @@ export class FHEVMClient {
     return bytes;
   }
 
-  createExternalInput(encryptedData: Uint8Array): string {
-    const hex = this.toHexString(encryptedData);
-    debugLog("Creating external input", { hex: hex.slice(0, 20) + "..." });
-    return hex;
-  }
-
   getDebugInfo() {
     return {
       isReady: this.isReady,
       hasInstance: !!this.instance,
-      hasPublicKey: !!this.publicKey,
       isDevelopmentMode: this.isDevelopmentMode,
-      zamaConfig: ZAMA_CONFIG,
+      sdkInitialized: this.sdkInitialized,
       provider: !!this.provider,
-      publicKeyLength: this.publicKey?.length || 0
+      hasZamaSDK: !!window.ZamaSDK
     };
   }
 
   async testRelayerConnectivity(): Promise<boolean> {
     try {
-      const response = await fetch(`${ZAMA_CONFIG.relayerUrl}/health`, {
-        method: "GET",
-        timeout: 3000
-      });
-      const isOnline = response.ok;
-      debugLog("Relayer connectivity test", { isOnline, url: ZAMA_CONFIG.relayerUrl });
-      return isOnline;
-    } catch {
-      debugLog("Relayer connectivity test failed", { url: ZAMA_CONFIG.relayerUrl });
+      // Test if Zama SDK is available and working
+      if (window.ZamaSDK && this.sdkInitialized) {
+        debugLog("Relayer connectivity test via SDK", { success: true });
+        return true;
+      }
+      
+      debugLog("Relayer connectivity test", { success: false, reason: "SDK not initialized" });
+      return false;
+    } catch (error) {
+      debugLog("Relayer connectivity test failed", error);
       return false;
     }
   }
