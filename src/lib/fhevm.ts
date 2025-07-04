@@ -172,6 +172,13 @@ export class FHEVMClient {
       }
 
       debugLog(`Loading WASM with initSDK (via ${this.loadMethod})...`);
+      
+      // Check if we have proper CORS headers for threading
+      const hasProperHeaders = this.checkCORSHeaders();
+      if (!hasProperHeaders) {
+        debugLog("⚠️ CORS headers not properly set, threading may not work optimally");
+      }
+      
       await initSDK();
       this.sdkInitialized = true;
 
@@ -195,13 +202,30 @@ export class FHEVMClient {
       debugLog("✅ Zama SDK initialized successfully", {
         hasInstance: !!this.instance,
         instanceType: typeof this.instance,
-        loadMethod: this.loadMethod
+        loadMethod: this.loadMethod,
+        threadingSupported: hasProperHeaders
       });
 
     } catch (error) {
       debugLog("❌ Zama SDK initialization failed", error);
       throw error;
     }
+  }
+
+  private checkCORSHeaders(): boolean {
+    // This is a simple check - in a real environment, you'd need to verify
+    // that the server actually sends the correct headers
+    const isDevelopment = import.meta.env.DEV;
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    
+    if (isDevelopment && isLocalhost) {
+      // In development with Vite, we've configured the headers
+      return true;
+    }
+    
+    // For production, you'd need to check actual response headers
+    // This is just a placeholder
+    return false;
   }
 
   async encrypt32(value: number): Promise<{ data: Uint8Array; proof: Uint8Array }> {
@@ -372,7 +396,8 @@ export class FHEVMClient {
       windowHasCreateInstance: !!window.createInstance,
       windowHasSepoliaConfig: !!window.SepoliaConfig,
       windowZamaSDKLoaded: !!window.zamaSDKLoaded,
-      windowUseNpmFallback: !!window.useNpmFallback
+      windowUseNpmFallback: !!window.useNpmFallback,
+      corsHeadersConfigured: this.checkCORSHeaders()
     };
   }
 

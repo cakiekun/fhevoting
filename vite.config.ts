@@ -14,7 +14,7 @@ export default defineConfig({
     global: 'globalThis',
   },
   optimizeDeps: {
-    include: ['ethers', 'fhevmjs']
+    include: ['ethers', '@zama-fhe/relayer-sdk']
   },
   build: {
     rollupOptions: {
@@ -22,6 +22,18 @@ export default defineConfig({
       output: {
         globals: {}
       }
+    }
+  },
+  server: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp'
+    }
+  },
+  preview: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp'
     }
   }
 })
