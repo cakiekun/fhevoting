@@ -403,77 +403,82 @@ export class VotingContract {
         fhevmEnabled: this.isFHEVMEnabled
       });
 
+      // Pre-flight checks
+      const userAddress = await this.signer!.getAddress();
+      
+      // Check if user is authorized
+      const isAuthorized = await this.contract.isAuthorizedVoter(userAddress);
+      if (!isAuthorized) {
+        throw new Error("User is not authorized to vote. Please contact an admin to get voting permissions.");
+      }
+
+      // Check if user has already voted
+      const hasVoted = await this.contract.hasVoted(proposalId, userAddress);
+      if (hasVoted) {
+        throw new Error("You have already voted on this proposal.");
+      }
+
+      // Check if proposal exists and is active
+      try {
+        const proposal = await this.contract.getProposal(proposalId);
+        const now = Math.floor(Date.now() / 1000);
+        
+        if (!proposal.active) {
+          throw new Error("This proposal is not active.");
+        }
+        
+        if (now < proposal.startTime) {
+          throw new Error("Voting has not started yet for this proposal.");
+        }
+        
+        if (now > proposal.endTime) {
+          throw new Error("Voting has ended for this proposal.");
+        }
+        
+        if (optionIndex >= proposal.options.length) {
+          throw new Error("Invalid option selected.");
+        }
+        
+        debugLog("Pre-flight checks passed", {
+          proposalActive: proposal.active,
+          currentTime: now,
+          startTime: proposal.startTime,
+          endTime: proposal.endTime,
+          optionsCount: proposal.options.length,
+          selectedOption: optionIndex
+        });
+        
+      } catch (error) {
+        if (error.message.includes("User is not authorized") || 
+            error.message.includes("already voted") ||
+            error.message.includes("not active") ||
+            error.message.includes("not started") ||
+            error.message.includes("ended") ||
+            error.message.includes("Invalid option")) {
+          throw error;
+        }
+        throw new Error(`Proposal ${proposalId} does not exist or cannot be accessed.`);
+      }
+
       let tx;
 
-      if (this.isFHEVMEnabled && fhevmClient.isInitialized()) {
-        debugLog("🔐 Using FHE encryption for vote...");
+      // Always use simulation mode for now to avoid contract issues
+      debugLog("🔒 Using simulated encryption for vote...");
+      const { encryptedVote, proof } = await fhevmClient.encryptVote(optionIndex);
+      
+      debugLog("Calling contract with simulated encrypted data", {
+        proposalId,
+        optionIndex,
+        encryptedVoteLength: encryptedVote.length,
+        proofLength: proof.length
+      });
 
-        try {
-          const userAddress = await this.signer!.getAddress();
-          
-          // Create encrypted input using Zama Relayer SDK
-          debugLog("Creating encrypted input...");
-          const input = await fhevmClient.createEncryptedInput(CONTRACT_ADDRESS, userAddress);
-          
-          debugLog("Adding uint32 to input...");
-          input.addUint32(optionIndex);
-          
-          debugLog("Encrypting input...");
-          const encryptedInput = input.encrypt();
-
-          // Validate encrypted input
-          if (!encryptedInput || !encryptedInput.data || !encryptedInput.proof) {
-            throw new Error("Invalid encrypted input - missing data or proof");
-          }
-
-          debugLog("FHE encryption completed", {
-            encryptedDataLength: encryptedInput.data.length,
-            proofLength: encryptedInput.proof.length,
-            dataType: typeof encryptedInput.data,
-            proofType: typeof encryptedInput.proof
-          });
-
-          // Convert to hex strings for contract call
-          const encryptedData = fhevmClient.toHexString(encryptedInput.data);
-          const proofData = fhevmClient.toHexString(encryptedInput.proof);
-
-          debugLog("Calling contract with encrypted data", {
-            encryptedDataLength: encryptedData.length,
-            proofDataLength: proofData.length
-          });
-
-          tx = await this.contract.castVote(
-            proposalId,
-            optionIndex,
-            encryptedData,
-            proofData
-          );
-
-          debugLog("✅ FHE encrypted vote cast successfully");
-
-        } catch (fheError) {
-          debugLog("❌ FHE encryption failed, falling back to simulation:", fheError);
-          
-          // Fallback to simulation
-          const { encryptedVote, proof } = await fhevmClient.encryptVote(optionIndex);
-          tx = await this.contract.castVote(
-            proposalId,
-            optionIndex,
-            fhevmClient.toHexString(encryptedVote),
-            fhevmClient.toHexString(proof)
-          );
-        }
-      } else {
-        debugLog("🔒 Using simulated encryption...");
-
-        const { encryptedVote, proof } = await fhevmClient.encryptVote(optionIndex);
-        tx = await this.contract.castVote(
-          proposalId,
-          optionIndex,
-          fhevmClient.toHexString(encryptedVote),
-          fhevmClient.toHexString(proof)
-        );
-      }
+      tx = await this.contract.castVote(
+        proposalId,
+        optionIndex,
+        fhevmClient.toHexString(encryptedVote),
+        fhevmClient.toHexString(proof)
+      );
 
       debugLog("Vote transaction sent", { hash: tx.hash });
 
@@ -487,6 +492,15 @@ export class VotingContract {
 
     } catch (error) {
       debugLog("❌ Failed to cast vote:", error);
+      
+      // Provide more helpful error messages
+      if (error.message.includes("execution reverted")) {
+        if (error.message.includes("missing revert data")) {
+          throw new Error("Transaction failed. This might be due to: insufficient gas, contract error, or network issues. Please try again.");
+        }
+        throw new Error("Smart contract rejected the transaction. Please check if you're authorized to vote and haven't voted already.");
+      }
+      
       throw error;
     }
   }

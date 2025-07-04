@@ -13,7 +13,8 @@ import {
   Eye,
   AlertCircle,
   Lock,
-  Check
+  Check,
+  AlertTriangle
 } from 'lucide-react';
 import { Proposal } from '@/types/voting';
 import { votingContract } from '@/lib/contract';
@@ -57,10 +58,35 @@ export function ProposalCard({ proposal, userIsAdmin, onVoteSuccess }: ProposalC
       } else {
         throw new Error('Vote failed');
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Vote error:', error);
+      
+      let errorMessage = "There was an error casting your vote. Please try again.";
+      
+      // Provide specific error messages based on the error
+      if (error.message.includes("not authorized")) {
+        errorMessage = "You are not authorized to vote. Please contact an admin to get voting permissions.";
+      } else if (error.message.includes("already voted")) {
+        errorMessage = "You have already voted on this proposal.";
+      } else if (error.message.includes("not active")) {
+        errorMessage = "This proposal is not currently active for voting.";
+      } else if (error.message.includes("not started")) {
+        errorMessage = "Voting has not started yet for this proposal.";
+      } else if (error.message.includes("ended")) {
+        errorMessage = "Voting has ended for this proposal.";
+      } else if (error.message.includes("Invalid option")) {
+        errorMessage = "Invalid voting option selected.";
+      } else if (error.message.includes("insufficient gas")) {
+        errorMessage = "Transaction failed due to insufficient gas. Please try again with more gas.";
+      } else if (error.message.includes("user rejected")) {
+        errorMessage = "Transaction was cancelled by user.";
+      } else if (error.message.includes("network")) {
+        errorMessage = "Network error. Please check your connection and try again.";
+      }
+      
       toast({
         title: "Vote Failed",
-        description: "There was an error casting your vote. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -268,6 +294,14 @@ export function ProposalCard({ proposal, userIsAdmin, onVoteSuccess }: ProposalC
                     </span>
                   </div>
                   <p className="mt-1">Your vote will be encrypted using FHE technology for complete privacy.</p>
+                </div>
+              )}
+
+              {/* Warning for simulation mode */}
+              {votingContract.isSimulation() && (
+                <div className="flex items-center text-sm text-yellow-600 bg-yellow-50 dark:bg-yellow-950/20 p-3 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  <span>Running in simulation mode - votes are simulated for demonstration</span>
                 </div>
               )}
             </div>
