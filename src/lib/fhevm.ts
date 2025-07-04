@@ -199,13 +199,17 @@ export class FHEVMClient {
       this.instance = await createInstance(config);
       this.isReady = true;
 
-      debugLog("✅ Zama SDK initialized successfully", {
-        hasInstance: !!this.instance,
-        instanceType: typeof this.instance,
-        loadMethod: this.loadMethod,
-        threadingSupported: hasProperHeaders,
-        instanceMethods: this.instance ? Object.getOwnPropertyNames(Object.getPrototypeOf(this.instance)) : []
-      });
+      // Log available methods on the instance
+      if (this.instance) {
+        const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(this.instance));
+        debugLog("✅ Zama SDK initialized successfully", {
+          hasInstance: !!this.instance,
+          instanceType: typeof this.instance,
+          loadMethod: this.loadMethod,
+          threadingSupported: hasProperHeaders,
+          instanceMethods: methods
+        });
+      }
 
     } catch (error) {
       debugLog("❌ Zama SDK initialization failed", error);
@@ -252,12 +256,15 @@ export class FHEVMClient {
       // Try different method names that might be available
       let encrypted;
       if (typeof this.instance.encrypt32 === 'function') {
-        encrypted = this.instance.encrypt32(value);
+        encrypted = await this.instance.encrypt32(value);
       } else if (typeof this.instance.encryptUint32 === 'function') {
-        encrypted = this.instance.encryptUint32(value);
+        encrypted = await this.instance.encryptUint32(value);
       } else if (typeof this.instance.encrypt === 'function') {
-        encrypted = this.instance.encrypt(value, 'uint32');
+        encrypted = await this.instance.encrypt(value, 'uint32');
+      } else if (typeof this.instance.encryptU32 === 'function') {
+        encrypted = await this.instance.encryptU32(value);
       } else {
+        debugLog("Available methods on instance:", methods);
         throw new Error("No encryption method found on instance");
       }
 
@@ -265,12 +272,14 @@ export class FHEVMClient {
         hasData: !!encrypted.data,
         hasProof: !!encrypted.proof,
         dataLength: encrypted.data?.length,
-        proofLength: encrypted.proof?.length
+        proofLength: encrypted.proof?.length,
+        encryptedType: typeof encrypted,
+        encryptedKeys: Object.keys(encrypted || {})
       });
 
       return {
-        data: encrypted.data || new Uint8Array(32),
-        proof: encrypted.proof || new Uint8Array(32)
+        data: encrypted.data || encrypted.ciphertext || new Uint8Array(32),
+        proof: encrypted.proof || encrypted.inputProof || new Uint8Array(32)
       };
 
     } catch (error) {
@@ -329,25 +338,68 @@ export class FHEVMClient {
 
       let input;
       if (typeof this.instance.createEncryptedInput === 'function') {
-        input = this.instance.createEncryptedInput(contractAddress, userAddress);
+        input = await this.instance.createEncryptedInput(contractAddress, userAddress);
       } else if (typeof this.instance.createInput === 'function') {
-        input = this.instance.createInput(contractAddress, userAddress);
+        input = await this.instance.createInput(contractAddress, userAddress);
+      } else if (typeof this.instance.input === 'function') {
+        input = await this.instance.input(contractAddress, userAddress);
       } else {
+        debugLog("Available methods:", methods);
         throw new Error("No input creation method found");
       }
       
       debugLog("✅ Encrypted input created successfully", {
         inputType: typeof input,
-        inputMethods: input ? Object.getOwnPropertyNames(Object.getPrototypeOf(input)) : []
+        inputMethods: input ? Object.getOwnPropertyNames(Object.getPrototypeOf(input)) : [],
+        inputKeys: input ? Object.keys(input) : []
       });
 
-      return input;
+      // Wrap the input to handle different method names
+      return this.wrapInput(input);
 
     } catch (error) {
       debugLog("❌ Failed to create encrypted input", error);
       // Return simulation input as fallback
       return this.createSimulatedInput();
     }
+  }
+
+  private wrapInput(input: any) {
+    const inputMethods = input ? Object.getOwnPropertyNames(Object.getPrototypeOf(input)) : [];
+    debugLog("Wrapping input with methods:", inputMethods);
+
+    return {
+      addUint32: (value: number) => {
+        debugLog("Adding uint32 to input", { value, availableMethods: inputMethods });
+        
+        if (typeof input.addUint32 === 'function') {
+          return input.addUint32(value);
+        } else if (typeof input.add32 === 'function') {
+          return input.add32(value);
+        } else if (typeof input.addU32 === 'function') {
+          return input.addU32(value);
+        } else if (typeof input.add === 'function') {
+          return input.add(value, 'uint32');
+        } else {
+          debugLog("No addUint32 method found, available methods:", inputMethods);
+          throw new Error("No method to add uint32 found on input");
+        }
+      },
+      encrypt: () => {
+        debugLog("Encrypting input");
+        
+        if (typeof input.encrypt === 'function') {
+          return input.encrypt();
+        } else if (typeof input.getEncrypted === 'function') {
+          return input.getEncrypted();
+        } else if (typeof input.build === 'function') {
+          return input.build();
+        } else {
+          debugLog("No encrypt method found, available methods:", inputMethods);
+          throw new Error("No encrypt method found on input");
+        }
+      }
+    };
   }
 
   private createSimulatedInput() {

@@ -412,8 +412,13 @@ export class VotingContract {
           const userAddress = await this.signer!.getAddress();
           
           // Create encrypted input using Zama Relayer SDK
+          debugLog("Creating encrypted input...");
           const input = await fhevmClient.createEncryptedInput(CONTRACT_ADDRESS, userAddress);
+          
+          debugLog("Adding uint32 to input...");
           input.addUint32(optionIndex);
+          
+          debugLog("Encrypting input...");
           const encryptedInput = input.encrypt();
 
           debugLog("FHE encryption completed", {
@@ -421,11 +426,20 @@ export class VotingContract {
             proofLength: encryptedInput.proof.length
           });
 
+          // Convert to hex strings for contract call
+          const encryptedData = fhevmClient.toHexString(encryptedInput.data);
+          const proofData = fhevmClient.toHexString(encryptedInput.proof);
+
+          debugLog("Calling contract with encrypted data", {
+            encryptedDataLength: encryptedData.length,
+            proofDataLength: proofData.length
+          });
+
           tx = await this.contract.castVote(
             proposalId,
             optionIndex,
-            encryptedInput.data,
-            encryptedInput.proof
+            encryptedData,
+            proofData
           );
 
           debugLog("✅ FHE encrypted vote cast successfully");
