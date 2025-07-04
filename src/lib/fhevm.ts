@@ -21,7 +21,7 @@ const tryNpmImport = async () => {
 };
 
 // Wait for SDK to be available with multiple methods
-const waitForZamaSDK = (timeout = 15000): Promise<any> => {
+const waitForZamaSDK = (timeout = 10000): Promise<any> => {
   return new Promise(async (resolve, reject) => {
     const startTime = Date.now();
     
@@ -122,18 +122,19 @@ export class FHEVMClient {
         debugLog("✅ Network verified", { chainId, name: network.name });
       }
 
-      // Try to initialize Zama SDK
-      if (!this.isDevelopmentMode) {
-        try {
-          await this.initializeZamaSDK();
-        } catch (sdkError) {
-          debugLog("❌ Zama SDK initialization failed, switching to development mode", sdkError);
-          this.isDevelopmentMode = true;
-        }
+      // Always try simulation mode first to avoid WASM errors
+      if (this.isDevelopmentMode || import.meta.env.VITE_FORCE_SIMULATION === "true") {
+        debugLog("🔧 Running in development/simulation mode (forced or auto-detected)");
+        this.isReady = true;
+        return;
       }
 
-      if (this.isDevelopmentMode) {
-        debugLog("🔧 Running in development/simulation mode");
+      // Try to initialize Zama SDK with better error handling
+      try {
+        await this.initializeZamaSDK();
+      } catch (sdkError) {
+        debugLog("❌ Zama SDK initialization failed, switching to simulation mode", sdkError);
+        this.isDevelopmentMode = true;
         this.isReady = true;
       }
 
@@ -155,8 +156,8 @@ export class FHEVMClient {
     try {
       debugLog("Waiting for Zama SDK to load...");
 
-      // Wait for SDK to be available
-      this.zamaSDK = await waitForZamaSDK();
+      // Wait for SDK to be available with shorter timeout
+      this.zamaSDK = await waitForZamaSDK(5000);
       
       const { initSDK, createInstance, SepoliaConfig } = this.zamaSDK;
 
@@ -171,16 +172,28 @@ export class FHEVMClient {
         this.loadMethod = "npm";
       }
 
-      debugLog(`Loading WASM with initSDK (via ${this.loadMethod})...`);
+      debugLog(`Attempting WASM initialization (via ${this.loadMethod})...`);
       
       // Check if we have proper CORS headers for threading
       const hasProperHeaders = this.checkCORSHeaders();
       if (!hasProperHeaders) {
-        debugLog("⚠️ CORS headers not properly set, threading may not work optimally");
+        debugLog("⚠️ CORS headers not properly set, this may cause WASM errors");
       }
       
-      await initSDK();
-      this.sdkInitialized = true;
+      // Try to initialize SDK with timeout and error handling
+      const initPromise = initSDK();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("SDK initialization timeout")), 10000)
+      );
+
+      try {
+        await Promise.race([initPromise, timeoutPromise]);
+        this.sdkInitialized = true;
+        debugLog("✅ WASM initialization successful");
+      } catch (initError) {
+        debugLog("❌ WASM initialization failed", initError);
+        throw new Error(`WASM initialization failed: ${initError.message}`);
+      }
 
       debugLog("Creating instance with Sepolia config...");
       
@@ -189,56 +202,36 @@ export class FHEVMClient {
         throw new Error("MetaMask not available");
       }
 
+      // Create config with error handling
       const config = { 
         ...SepoliaConfig, 
         network: window.ethereum 
       };
 
-      debugLog("Config for createInstance:", config);
+      debugLog("Config for createInstance:", {
+        hasAclContract: !!config.aclContractAddress,
+        hasKmsContract: !!config.kmsContractAddress,
+        hasInputVerifier: !!config.inputVerifierContractAddress,
+        hasNetwork: !!config.network
+      });
 
-      this.instance = await createInstance(config);
+      try {
+        this.instance = await createInstance(config);
+      } catch (instanceError) {
+        debugLog("❌ Instance creation failed", instanceError);
+        throw new Error(`Instance creation failed: ${instanceError.message}`);
+      }
       
-      // Validate the instance has the expected methods
+      // Validate the instance
       if (!this.instance) {
         throw new Error("Failed to create instance - instance is null");
       }
 
-      // Check if instance has expected methods
-      const instanceMethods = this.getAllMethods(this.instance);
-      debugLog("Instance methods after creation:", instanceMethods);
-
-      // Look for encryption-related methods
-      const hasEncryptionMethods = instanceMethods.some(method => 
-        method.includes('encrypt') || 
-        method.includes('Encrypt') ||
-        method.includes('createInput') ||
-        method.includes('createEncryptedInput')
-      );
-
-      if (!hasEncryptionMethods) {
-        debugLog("⚠️ Instance doesn't have expected encryption methods, checking prototype chain...");
-        
-        // Try to get methods from prototype chain
-        let obj = this.instance;
-        let level = 0;
-        while (obj && level < 5) {
-          const proto = Object.getPrototypeOf(obj);
-          if (proto && proto !== Object.prototype) {
-            const protoMethods = Object.getOwnPropertyNames(proto);
-            debugLog(`Prototype level ${level} methods:`, protoMethods);
-            obj = proto;
-            level++;
-          } else {
-            break;
-          }
-        }
-        
-        // If still no encryption methods, force simulation mode
-        if (!hasEncryptionMethods) {
-          debugLog("⚠️ No encryption methods found, forcing simulation mode");
-          throw new Error("Instance lacks encryption methods");
-        }
-      }
+      // Quick validation without deep inspection to avoid triggering WASM errors
+      debugLog("✅ Instance created successfully", {
+        instanceType: typeof this.instance,
+        hasInstance: !!this.instance
+      });
 
       this.isReady = true;
 
@@ -246,9 +239,7 @@ export class FHEVMClient {
         hasInstance: !!this.instance,
         instanceType: typeof this.instance,
         loadMethod: this.loadMethod,
-        threadingSupported: hasProperHeaders,
-        instanceMethods: instanceMethods.slice(0, 10), // Show first 10 methods
-        hasEncryptionMethods
+        threadingSupported: hasProperHeaders
       });
 
     } catch (error) {
@@ -257,50 +248,14 @@ export class FHEVMClient {
     }
   }
 
-  private getAllMethods(obj: any): string[] {
-    const methods = new Set<string>();
-    
-    // Get own methods
-    Object.getOwnPropertyNames(obj).forEach(name => {
-      if (typeof obj[name] === 'function') {
-        methods.add(name);
-      }
-    });
-
-    // Get prototype methods
-    let current = obj;
-    let level = 0;
-    while (current && level < 5) {
-      const proto = Object.getPrototypeOf(current);
-      if (proto && proto !== Object.prototype) {
-        Object.getOwnPropertyNames(proto).forEach(name => {
-          if (typeof proto[name] === 'function') {
-            methods.add(name);
-          }
-        });
-        current = proto;
-        level++;
-      } else {
-        break;
-      }
-    }
-
-    return Array.from(methods);
-  }
-
   private checkCORSHeaders(): boolean {
-    // This is a simple check - in a real environment, you'd need to verify
-    // that the server actually sends the correct headers
     const isDevelopment = import.meta.env.DEV;
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     
     if (isDevelopment && isLocalhost) {
-      // In development with Vite, we've configured the headers
       return true;
     }
     
-    // For production, you'd need to check actual response headers
-    // This is just a placeholder
     return false;
   }
 
@@ -318,60 +273,37 @@ export class FHEVMClient {
     }
 
     try {
-      debugLog("🔐 Encrypting value with Zama SDK", { value });
+      debugLog("🔐 Attempting Zama SDK encryption", { value });
 
-      // Get all available methods
-      const allMethods = this.getAllMethods(this.instance);
-      debugLog("All available methods on instance:", allMethods);
-
-      // Try different method names that might be available
+      // Try to use the instance with careful error handling
       let encrypted;
-      const encryptionMethods = [
-        'encrypt32',
-        'encryptUint32', 
-        'encryptU32',
-        'encrypt',
-        'encryptValue',
-        'encryptNumber'
-      ];
-
-      let methodUsed = null;
-      for (const methodName of encryptionMethods) {
-        if (typeof this.instance[methodName] === 'function') {
-          debugLog(`Trying encryption method: ${methodName}`);
-          try {
-            if (methodName === 'encrypt') {
-              encrypted = await this.instance[methodName](value, 'uint32');
-            } else {
-              encrypted = await this.instance[methodName](value);
-            }
-            methodUsed = methodName;
-            break;
-          } catch (methodError) {
-            debugLog(`Method ${methodName} failed:`, methodError);
-            continue;
-          }
+      
+      // Try the most common method first
+      if (typeof this.instance.encrypt32 === 'function') {
+        try {
+          encrypted = await this.instance.encrypt32(value);
+        } catch (encryptError) {
+          debugLog("❌ encrypt32 method failed", encryptError);
+          throw encryptError;
         }
+      } else {
+        throw new Error("encrypt32 method not available on instance");
       }
 
-      if (!encrypted || !methodUsed) {
-        debugLog("Available methods on instance:", allMethods);
-        throw new Error("No working encryption method found on instance");
+      if (!encrypted) {
+        throw new Error("Encryption returned null/undefined");
       }
 
       debugLog("✅ Encryption successful", {
-        methodUsed,
         hasData: !!encrypted.data,
         hasProof: !!encrypted.proof,
         dataLength: encrypted.data?.length,
-        proofLength: encrypted.proof?.length,
-        encryptedType: typeof encrypted,
-        encryptedKeys: Object.keys(encrypted || {})
+        proofLength: encrypted.proof?.length
       });
 
       return {
-        data: encrypted.data || encrypted.ciphertext || new Uint8Array(32),
-        proof: encrypted.proof || encrypted.inputProof || new Uint8Array(32)
+        data: encrypted.data || new Uint8Array(32),
+        proof: encrypted.proof || new Uint8Array(32)
       };
 
     } catch (error) {
@@ -424,104 +356,68 @@ export class FHEVMClient {
     try {
       debugLog("Creating encrypted input with Zama SDK", { contractAddress, userAddress });
       
-      // Get all available methods
-      const allMethods = this.getAllMethods(this.instance);
-      debugLog("All available methods for input creation:", allMethods);
-
       let input;
-      const inputMethods = [
-        'createEncryptedInput',
-        'createInput',
-        'input',
-        'newInput',
-        'getInput'
-      ];
-
-      let methodUsed = null;
-      for (const methodName of inputMethods) {
-        if (typeof this.instance[methodName] === 'function') {
-          debugLog(`Trying input creation method: ${methodName}`);
-          try {
-            input = await this.instance[methodName](contractAddress, userAddress);
-            methodUsed = methodName;
-            break;
-          } catch (methodError) {
-            debugLog(`Method ${methodName} failed:`, methodError);
-            continue;
-          }
+      
+      // Try the most common method
+      if (typeof this.instance.createEncryptedInput === 'function') {
+        try {
+          input = await this.instance.createEncryptedInput(contractAddress, userAddress);
+        } catch (inputError) {
+          debugLog("❌ createEncryptedInput failed", inputError);
+          throw inputError;
         }
+      } else {
+        throw new Error("createEncryptedInput method not available");
       }
 
-      if (!input || !methodUsed) {
-        debugLog("Available methods:", allMethods);
-        throw new Error("No working input creation method found");
+      if (!input) {
+        throw new Error("Input creation returned null/undefined");
       }
       
-      debugLog("✅ Encrypted input created successfully", {
-        methodUsed,
-        inputType: typeof input,
-        inputMethods: input ? this.getAllMethods(input).slice(0, 10) : [],
-        inputKeys: input ? Object.keys(input) : []
-      });
+      debugLog("✅ Encrypted input created successfully");
 
-      // Wrap the input to handle different method names
+      // Return a safe wrapper
       return this.wrapInput(input);
 
     } catch (error) {
       debugLog("❌ Failed to create encrypted input", error);
-      // Return simulation input as fallback
       return this.createSimulatedInput();
     }
   }
 
   private wrapInput(input: any) {
-    const inputMethods = this.getAllMethods(input);
-    debugLog("Wrapping input with methods:", inputMethods.slice(0, 10));
-
     return {
       addUint32: (value: number) => {
-        debugLog("Adding uint32 to input", { value, availableMethods: inputMethods.slice(0, 10) });
+        debugLog("Adding uint32 to input", { value });
         
-        const addMethods = ['addUint32', 'add32', 'addU32', 'add', 'addValue', 'addNumber'];
-        
-        for (const methodName of addMethods) {
-          if (typeof input[methodName] === 'function') {
-            debugLog(`Using add method: ${methodName}`);
-            try {
-              if (methodName === 'add') {
-                return input[methodName](value, 'uint32');
-              } else {
-                return input[methodName](value);
-              }
-            } catch (methodError) {
-              debugLog(`Add method ${methodName} failed:`, methodError);
-              continue;
-            }
+        try {
+          if (typeof input.addUint32 === 'function') {
+            return input.addUint32(value);
+          } else if (typeof input.add32 === 'function') {
+            return input.add32(value);
+          } else {
+            throw new Error("No addUint32 method available");
           }
+        } catch (error) {
+          debugLog("❌ Failed to add uint32", error);
+          throw error;
         }
-        
-        debugLog("No working addUint32 method found, available methods:", inputMethods);
-        throw new Error("No method to add uint32 found on input");
       },
       encrypt: () => {
         debugLog("Encrypting input");
         
-        const encryptMethods = ['encrypt', 'getEncrypted', 'build', 'finalize', 'seal'];
-        
-        for (const methodName of encryptMethods) {
-          if (typeof input[methodName] === 'function') {
-            debugLog(`Using encrypt method: ${methodName}`);
-            try {
-              return input[methodName]();
-            } catch (methodError) {
-              debugLog(`Encrypt method ${methodName} failed:`, methodError);
-              continue;
-            }
+        try {
+          if (typeof input.encrypt === 'function') {
+            return input.encrypt();
+          } else if (typeof input.build === 'function') {
+            return input.build();
+          } else {
+            throw new Error("No encrypt method available");
           }
+        } catch (error) {
+          debugLog("❌ Failed to encrypt input", error);
+          throw error;
         }
-        
-        debugLog("No working encrypt method found, available methods:", inputMethods);
-        throw new Error("No encrypt method found on input");
       }
     };
   }
@@ -532,11 +428,6 @@ export class FHEVMClient {
     return {
       addUint32: (value: number) => {
         debugLog("Adding uint32 to simulated input", { value });
-        values.push(value);
-        return this;
-      },
-      add32: (value: number) => {
-        debugLog("Adding 32-bit value to simulated input", { value });
         values.push(value);
         return this;
       },
@@ -610,20 +501,18 @@ export class FHEVMClient {
       windowHasSepoliaConfig: !!window.SepoliaConfig,
       windowZamaSDKLoaded: !!window.zamaSDKLoaded,
       windowUseNpmFallback: !!window.useNpmFallback,
-      corsHeadersConfigured: this.checkCORSHeaders(),
-      instanceMethods: this.instance ? this.getAllMethods(this.instance).slice(0, 15) : []
+      corsHeadersConfigured: this.checkCORSHeaders()
     };
   }
 
   async testRelayerConnectivity(): Promise<boolean> {
     try {
-      // Test if Zama SDK is available and working
-      if (this.zamaSDK && this.sdkInitialized) {
+      if (this.zamaSDK && this.sdkInitialized && !this.isDevelopmentMode) {
         debugLog("Relayer connectivity test via SDK", { success: true, method: this.loadMethod });
         return true;
       }
       
-      debugLog("Relayer connectivity test", { success: false, reason: "SDK not initialized" });
+      debugLog("Relayer connectivity test", { success: false, reason: "SDK not initialized or in simulation mode" });
       return false;
     } catch (error) {
       debugLog("Relayer connectivity test failed", error);
