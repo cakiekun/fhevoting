@@ -421,9 +421,16 @@ export class VotingContract {
           debugLog("Encrypting input...");
           const encryptedInput = input.encrypt();
 
+          // Validate encrypted input
+          if (!encryptedInput || !encryptedInput.data || !encryptedInput.proof) {
+            throw new Error("Invalid encrypted input - missing data or proof");
+          }
+
           debugLog("FHE encryption completed", {
             encryptedDataLength: encryptedInput.data.length,
-            proofLength: encryptedInput.proof.length
+            proofLength: encryptedInput.proof.length,
+            dataType: typeof encryptedInput.data,
+            proofType: typeof encryptedInput.proof
           });
 
           // Convert to hex strings for contract call
