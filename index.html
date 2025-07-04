@@ -8,13 +8,15 @@
     <title>SecureVote DAO | FHE-Powered Encrypted Voting</title>
     <meta name="description"
         content="The first DAO governance platform powered by Fully Homomorphic Encryption. Vote privately while maintaining transparent results." />
-    
-    <!-- Zama FHE Relayer SDK -->
-    <script src="https://cdn.zama.ai/relayer-sdk-js/0.1.0-9/relayer-sdk-js.umd.cjs" type="text/javascript"></script>
 </head>
 
 <body>
     <div id="root"></div>
+    
+    <!-- Load Zama FHE Relayer SDK before the main app -->
+    <script src="https://cdn.zama.ai/relayer-sdk-js/0.1.0-9/relayer-sdk-js.umd.cjs" type="text/javascript"></script>
+    
+    <!-- Main application -->
     <script type="module" src="/src/main.tsx"></script>
 </body>
 

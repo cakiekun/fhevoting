@@ -323,6 +323,20 @@ export class VotingContract {
         resultsRevealed: false,
         revealedResults: [],
         hasVoted: false
+      },
+      {
+        id: 1,
+        title: "Budget Allocation for Q2 2025",
+        description: "How should we allocate the budget for the second quarter of 2025?",
+        options: ["Marketing & Growth", "Research & Development", "Infrastructure", "Community Programs"],
+        startTime: now - 7200000, // 2 hours ago
+        endTime: now + 172800000, // 48 hours from now
+        totalVotes: 23,
+        creator: "0x9876543210987654321098765432109876543210",
+        active: true,
+        resultsRevealed: false,
+        revealedResults: [],
+        hasVoted: false
       }
     ];
   }
@@ -622,5 +636,9 @@ export const votingContract = new VotingContract();
 declare global {
   interface Window {
     ethereum?: any;
+    ZamaSDK?: any;
+    initSDK?: () => Promise<void>;
+    createInstance?: (config: any) => Promise<any>;
+    SepoliaConfig?: any;
   }
 }
