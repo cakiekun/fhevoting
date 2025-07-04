@@ -7,35 +7,68 @@ const debugLog = (message: string, data?: any) => {
   }
 };
 
-// Wait for SDK to be available
-const waitForZamaSDK = (timeout = 10000): Promise<any> => {
-  return new Promise((resolve, reject) => {
+// Try to import from npm package as fallback
+const tryNpmImport = async () => {
+  try {
+    debugLog("Trying npm package import...");
+    const module = await import("@zama-fhe/relayer-sdk/bundle");
+    debugLog("✅ npm package imported successfully");
+    return module;
+  } catch (error) {
+    debugLog("❌ npm package import failed", error);
+    return null;
+  }
+};
+
+// Wait for SDK to be available with multiple methods
+const waitForZamaSDK = (timeout = 15000): Promise<any> => {
+  return new Promise(async (resolve, reject) => {
     const startTime = Date.now();
     
-    const checkSDK = () => {
-      if (window.ZamaSDK) {
-        debugLog("✅ Zama SDK found on window object");
-        resolve(window.ZamaSDK);
-        return;
+    const checkSDK = async () => {
+      // Method 1: Check CDN loaded SDK
+      if (window.zamaSDKLoaded) {
+        if (window.ZamaSDK) {
+          debugLog("✅ Zama SDK found on window.ZamaSDK");
+          resolve(window.ZamaSDK);
+          return;
+        }
+        
+        // Check for global functions directly
+        if (window.initSDK && window.createInstance && window.SepoliaConfig) {
+          debugLog("✅ Zama SDK functions found globally");
+          resolve({
+            initSDK: window.initSDK,
+            createInstance: window.createInstance,
+            SepoliaConfig: window.SepoliaConfig
+          });
+          return;
+        }
       }
       
-      // Check for global functions directly
-      if (window.initSDK && window.createInstance && window.SepoliaConfig) {
-        debugLog("✅ Zama SDK functions found globally");
-        resolve({
-          initSDK: window.initSDK,
-          createInstance: window.createInstance,
-          SepoliaConfig: window.SepoliaConfig
-        });
-        return;
+      // Method 2: Try npm package if CDN failed
+      if (window.useNpmFallback) {
+        debugLog("Trying npm package fallback...");
+        const npmModule = await tryNpmImport();
+        if (npmModule) {
+          resolve(npmModule);
+          return;
+        }
       }
       
       if (Date.now() - startTime > timeout) {
-        reject(new Error("Timeout waiting for Zama SDK to load"));
+        // Final fallback: try npm import one more time
+        debugLog("Timeout reached, trying final npm import...");
+        const finalModule = await tryNpmImport();
+        if (finalModule) {
+          resolve(finalModule);
+        } else {
+          reject(new Error("All SDK loading methods failed"));
+        }
         return;
       }
       
-      setTimeout(checkSDK, 100);
+      setTimeout(checkSDK, 200);
     };
     
     checkSDK();
@@ -53,6 +86,8 @@ declare global {
     initSDK?: () => Promise<void>;
     createInstance?: (config: any) => Promise<any>;
     SepoliaConfig?: any;
+    zamaSDKLoaded?: boolean;
+    useNpmFallback?: boolean;
   }
 }
 
@@ -63,6 +98,7 @@ export class FHEVMClient {
   private isDevelopmentMode: boolean = false;
   private sdkInitialized: boolean = false;
   private zamaSDK: any = null;
+  private loadMethod: string = "none";
 
   async init(provider: BrowserProvider): Promise<void> {
     this.provider = provider;
@@ -104,7 +140,8 @@ export class FHEVMClient {
       debugLog("✅ FHEVM client initialization completed", {
         isReady: this.isReady,
         developmentMode: this.isDevelopmentMode,
-        sdkInitialized: this.sdkInitialized
+        sdkInitialized: this.sdkInitialized,
+        loadMethod: this.loadMethod
       });
 
     } catch (error) {
@@ -127,8 +164,14 @@ export class FHEVMClient {
         throw new Error("Zama SDK functions not available");
       }
 
-      // Initialize SDK
-      debugLog("Loading WASM with initSDK...");
+      // Determine load method
+      if (window.zamaSDKLoaded) {
+        this.loadMethod = "CDN";
+      } else {
+        this.loadMethod = "npm";
+      }
+
+      debugLog(`Loading WASM with initSDK (via ${this.loadMethod})...`);
       await initSDK();
       this.sdkInitialized = true;
 
@@ -151,7 +194,8 @@ export class FHEVMClient {
 
       debugLog("✅ Zama SDK initialized successfully", {
         hasInstance: !!this.instance,
-        instanceType: typeof this.instance
+        instanceType: typeof this.instance,
+        loadMethod: this.loadMethod
       });
 
     } catch (error) {
@@ -164,7 +208,8 @@ export class FHEVMClient {
     debugLog("Encrypting value", {
       value,
       developmentMode: this.isDevelopmentMode,
-      hasInstance: !!this.instance
+      hasInstance: !!this.instance,
+      loadMethod: this.loadMethod
     });
 
     if (this.isDevelopmentMode || !this.isReady || !this.instance) {
@@ -219,7 +264,8 @@ export class FHEVMClient {
 
     debugLog("Encrypting vote", {
       vote,
-      mode: this.isDevelopmentMode ? "simulation" : "zama-sdk"
+      mode: this.isDevelopmentMode ? "simulation" : "zama-sdk",
+      loadMethod: this.loadMethod
     });
 
     const encrypted = await this.encrypt32(vote);
@@ -318,12 +364,15 @@ export class FHEVMClient {
       hasInstance: !!this.instance,
       isDevelopmentMode: this.isDevelopmentMode,
       sdkInitialized: this.sdkInitialized,
+      loadMethod: this.loadMethod,
       provider: !!this.provider,
       hasZamaSDK: !!this.zamaSDK,
       windowHasZamaSDK: !!window.ZamaSDK,
       windowHasInitSDK: !!window.initSDK,
       windowHasCreateInstance: !!window.createInstance,
-      windowHasSepoliaConfig: !!window.SepoliaConfig
+      windowHasSepoliaConfig: !!window.SepoliaConfig,
+      windowZamaSDKLoaded: !!window.zamaSDKLoaded,
+      windowUseNpmFallback: !!window.useNpmFallback
     };
   }
 
@@ -331,7 +380,7 @@ export class FHEVMClient {
     try {
       // Test if Zama SDK is available and working
       if (this.zamaSDK && this.sdkInitialized) {
-        debugLog("Relayer connectivity test via SDK", { success: true });
+        debugLog("Relayer connectivity test via SDK", { success: true, method: this.loadMethod });
         return true;
       }
       

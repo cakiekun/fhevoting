@@ -13,8 +13,45 @@
 <body>
     <div id="root"></div>
     
-    <!-- Load Zama FHE Relayer SDK before the main app -->
-    <script src="https://cdn.zama.ai/relayer-sdk-js/0.1.0-9/relayer-sdk-js.umd.cjs" type="text/javascript"></script>
+    <!-- Try multiple CDN approaches for Zama SDK -->
+    <script>
+        console.log('[CDN] Starting Zama SDK loading...');
+        
+        // Method 1: Try UMD version
+        const script1 = document.createElement('script');
+        script1.src = 'https://cdn.zama.ai/relayer-sdk-js/0.1.0-9/relayer-sdk-js.umd.cjs';
+        script1.type = 'text/javascript';
+        script1.onload = () => {
+            console.log('[CDN] UMD script loaded successfully');
+            window.zamaSDKLoaded = true;
+        };
+        script1.onerror = (error) => {
+            console.error('[CDN] UMD script failed to load:', error);
+            
+            // Method 2: Try ESM version as fallback
+            const script2 = document.createElement('script');
+            script2.type = 'module';
+            script2.innerHTML = `
+                try {
+                    console.log('[CDN] Trying ESM version...');
+                    const { initSDK, createInstance, SepoliaConfig } = await import('https://cdn.zama.ai/relayer-sdk-js/0.1.0-9/relayer-sdk-js.js');
+                    window.initSDK = initSDK;
+                    window.createInstance = createInstance;
+                    window.SepoliaConfig = SepoliaConfig;
+                    window.zamaSDKLoaded = true;
+                    console.log('[CDN] ESM version loaded successfully');
+                } catch (error) {
+                    console.error('[CDN] ESM version failed:', error);
+                    
+                    // Method 3: Use npm package as final fallback
+                    console.log('[CDN] Will use npm package fallback');
+                    window.useNpmFallback = true;
+                }
+            `;
+            document.head.appendChild(script2);
+        };
+        document.head.appendChild(script1);
+    </script>
     
     <!-- Main application -->
     <script type="module" src="/src/main.tsx"></script>
