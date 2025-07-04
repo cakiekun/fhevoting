@@ -203,7 +203,8 @@ export class FHEVMClient {
         hasInstance: !!this.instance,
         instanceType: typeof this.instance,
         loadMethod: this.loadMethod,
-        threadingSupported: hasProperHeaders
+        threadingSupported: hasProperHeaders,
+        instanceMethods: this.instance ? Object.getOwnPropertyNames(Object.getPrototypeOf(this.instance)) : []
       });
 
     } catch (error) {
@@ -244,8 +245,21 @@ export class FHEVMClient {
     try {
       debugLog("🔐 Encrypting value with Zama SDK", { value });
 
-      // Use the instance to encrypt
-      const encrypted = this.instance.encrypt32(value);
+      // Check available methods on instance
+      const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(this.instance));
+      debugLog("Available instance methods:", methods);
+
+      // Try different method names that might be available
+      let encrypted;
+      if (typeof this.instance.encrypt32 === 'function') {
+        encrypted = this.instance.encrypt32(value);
+      } else if (typeof this.instance.encryptUint32 === 'function') {
+        encrypted = this.instance.encryptUint32(value);
+      } else if (typeof this.instance.encrypt === 'function') {
+        encrypted = this.instance.encrypt(value, 'uint32');
+      } else {
+        throw new Error("No encryption method found on instance");
+      }
 
       debugLog("✅ Encryption successful", {
         hasData: !!encrypted.data,
@@ -303,42 +317,65 @@ export class FHEVMClient {
   async createEncryptedInput(contractAddress: string, userAddress: string): Promise<any> {
     if (this.isDevelopmentMode || !this.instance) {
       debugLog("🔧 Creating simulated encrypted input");
-      return {
-        addUint32: (value: number) => {
-          debugLog("Adding uint32 to simulated input", { value });
-          return this;
-        },
-        encrypt: () => {
-          const result = { data: new Uint8Array(32), proof: new Uint8Array(32) };
-          debugLog("Encrypting simulated input", { dataLength: result.data.length });
-          return result;
-        }
-      };
+      return this.createSimulatedInput();
     }
 
     try {
       debugLog("Creating encrypted input with Zama SDK", { contractAddress, userAddress });
       
-      const input = this.instance.createEncryptedInput(contractAddress, userAddress);
+      // Check available methods
+      const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(this.instance));
+      debugLog("Available instance methods for input creation:", methods);
+
+      let input;
+      if (typeof this.instance.createEncryptedInput === 'function') {
+        input = this.instance.createEncryptedInput(contractAddress, userAddress);
+      } else if (typeof this.instance.createInput === 'function') {
+        input = this.instance.createInput(contractAddress, userAddress);
+      } else {
+        throw new Error("No input creation method found");
+      }
       
-      debugLog("✅ Encrypted input created successfully");
+      debugLog("✅ Encrypted input created successfully", {
+        inputType: typeof input,
+        inputMethods: input ? Object.getOwnPropertyNames(Object.getPrototypeOf(input)) : []
+      });
+
       return input;
 
     } catch (error) {
       debugLog("❌ Failed to create encrypted input", error);
       // Return simulation input as fallback
-      return {
-        addUint32: (value: number) => {
-          debugLog("Adding uint32 to fallback input", { value });
-          return this;
-        },
-        encrypt: () => {
-          const result = { data: new Uint8Array(32), proof: new Uint8Array(32) };
-          debugLog("Encrypting fallback input", { dataLength: result.data.length });
-          return result;
-        }
-      };
+      return this.createSimulatedInput();
     }
+  }
+
+  private createSimulatedInput() {
+    const values: number[] = [];
+    
+    return {
+      addUint32: (value: number) => {
+        debugLog("Adding uint32 to simulated input", { value });
+        values.push(value);
+        return this;
+      },
+      add32: (value: number) => {
+        debugLog("Adding 32-bit value to simulated input", { value });
+        values.push(value);
+        return this;
+      },
+      encrypt: () => {
+        const result = { 
+          data: new Uint8Array(32 * values.length || 32), 
+          proof: new Uint8Array(32) 
+        };
+        debugLog("Encrypting simulated input", { 
+          dataLength: result.data.length,
+          valuesCount: values.length 
+        });
+        return result;
+      }
+    };
   }
 
   isInitialized(): boolean {
@@ -397,7 +434,8 @@ export class FHEVMClient {
       windowHasSepoliaConfig: !!window.SepoliaConfig,
       windowZamaSDKLoaded: !!window.zamaSDKLoaded,
       windowUseNpmFallback: !!window.useNpmFallback,
-      corsHeadersConfigured: this.checkCORSHeaders()
+      corsHeadersConfigured: this.checkCORSHeaders(),
+      instanceMethods: this.instance ? Object.getOwnPropertyNames(Object.getPrototypeOf(this.instance)) : []
     };
   }
 
